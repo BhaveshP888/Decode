@@ -128,3 +128,24 @@
     @apply font-sans;
   }
 }
+
+@layer utilities {
+  .animate-scan {
+    animation: scan-beam 4s ease-in-out infinite;
+  }
+}
+
+@keyframes scan-beam {
+  0% {
+    top: 0%;
+    opacity: 0.2;
+  }
+  50% {
+    top: 98%;
+    opacity: 1;
+  }
+  100% {
+    top: 0%;
+    opacity: 0.2;
+  }
+}

@@ -69,6 +69,44 @@ export async function GET() {
       response_format: {
         type: "text",
         mime_type: "application/json",
+        schema: {
+          type: "object",
+          properties: {
+            weekOf: { type: "string" },
+            topConcerns: {
+              type: "array",
+              items: { type: "string" }
+            },
+            nutrientsToIncrease: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  nutrient: { type: "string" },
+                  reason: { type: "string" },
+                  foodSources: {
+                    type: "array",
+                    items: { type: "string" }
+                  }
+                },
+                required: ["nutrient", "reason", "foodSources"]
+              }
+            },
+            simpleSwaps: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  avoid: { type: "string" },
+                  replaceWith: { type: "string" }
+                },
+                required: ["avoid", "replaceWith"]
+              }
+            },
+            message: { type: "string" }
+          },
+          required: ["weekOf", "topConcerns", "nutrientsToIncrease", "simpleSwaps", "message"]
+        }
       }
     });
 

@@ -103,6 +103,84 @@ ${rawInput}`
     const interaction = await ai.interactions.create({
       model: 'gemini-3.5-flash',
       input: prompt,
+      response_format: {
+        type: 'text',
+        mime_type: 'application/json',
+        schema: {
+          type: "object",
+          properties: {
+            overallScore: { type: "number" },
+            summary: { type: "string" },
+            scoreBreakdown: {
+              type: "object",
+              properties: {
+                highConcernCount: { type: "integer" },
+                moderateConcernCount: { type: "integer" },
+                lowConcernCount: { type: "integer" },
+                biggestConcern: { type: "string" },
+                easiestFix: { type: "string" }
+              },
+              required: ["highConcernCount", "moderateConcernCount", "lowConcernCount", "biggestConcern", "easiestFix"]
+            },
+            ingredients: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  name: { type: "string" },
+                  normalisedName: { type: "string" },
+                  origin: { type: "string" },
+                  category: { type: "string" },
+                  pros: {
+                    type: "array",
+                    items: { type: "string" }
+                  },
+                  cons: {
+                    type: "array",
+                    items: { type: "string" }
+                  },
+                  longTermEffects: {
+                    type: "object",
+                    properties: {
+                      positive: {
+                        type: "array",
+                        items: { type: "string" }
+                      },
+                      negative: {
+                        type: "array",
+                        items: { type: "string" }
+                      }
+                    },
+                    required: ["positive", "negative"]
+                  },
+                  riskLevel: {
+                    type: "string",
+                    enum: ["low", "moderate", "high"]
+                  },
+                  counter: {
+                    type: "object",
+                    properties: {
+                      needed: { type: "boolean" },
+                      nutrients: {
+                        type: "array",
+                        items: { type: "string" }
+                      },
+                      suggestions: {
+                        type: "array",
+                        items: { type: "string" }
+                      }
+                    },
+                    required: ["needed", "nutrients", "suggestions"]
+                  },
+                  didYouKnow: { type: "string" }
+                },
+                required: ["name", "normalisedName", "origin", "category", "pros", "cons", "longTermEffects", "riskLevel", "counter", "didYouKnow"]
+              }
+            }
+          },
+          required: ["overallScore", "summary", "scoreBreakdown", "ingredients"]
+        }
+      }
     })
 
     const lastStep = interaction.steps.at(-1) as { content?: Array<{ text?: string }> } | undefined
