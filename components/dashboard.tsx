@@ -2,6 +2,7 @@
 
 import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import { motion, AnimatePresence } from "motion/react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
@@ -137,7 +138,7 @@ export default function Dashboard() {
       <nav className="sticky top-0 z-40 flex items-center justify-between px-6 md:px-12 h-16 border-b border-white/5 bg-zinc-950/80 backdrop-blur-xl">
         <div className="flex items-center gap-2">
           <div className="w-7 h-7 rounded-lg flex items-center justify-center overflow-hidden">
-            <img src="/icon.png" alt="Decode Logo" className="w-full h-full object-cover" />
+            <Image src="/icon.png" alt="Decode Logo" width={28} height={28} className="object-cover" />
           </div>
           <span className="font-semibold text-white tracking-tight">Decode</span>
         </div>

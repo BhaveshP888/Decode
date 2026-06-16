@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { ai } from '@/lib/ai'
 import { prisma } from '@/lib/db'
 import { createClient } from '@/lib/supabase/server'
+import { Prisma } from '@prisma/client'
 
 interface ScanIngredient {
   name: string
@@ -280,7 +281,7 @@ async function persistScan(rawInput: string, inputType: string, result: ScanResu
       rawInput,
       overallScore: result.overallScore ?? 0,
       summary: result.summary ?? '',
-      reportJson: result as any,
+      reportJson: result as unknown as Prisma.InputJsonValue,
     },
   })
 

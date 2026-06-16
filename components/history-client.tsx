@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "motion/react";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import Image from "next/image";
 import { Badge } from "@/components/ui/badge";
 import {
   ShieldCheck,
@@ -47,7 +47,7 @@ interface ScanResult {
   ingredients: ScanIngredient[];
 }
 
-interface DBScan {
+export interface DBScan {
   id: string;
   productName: string | null;
   inputType: string;
@@ -55,7 +55,7 @@ interface DBScan {
   overallScore: number;
   summary: string;
   createdAt: Date | string;
-  reportJson: any;
+  reportJson: unknown;
   ingredients: {
     ingredient: {
       id: string;
@@ -87,8 +87,14 @@ export default function HistoryClient({ scans }: HistoryClientProps) {
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    setMounted(true);
-    return () => setMounted(false);
+    let active = true;
+    requestAnimationFrame(() => {
+      if (active) setMounted(true);
+    });
+    return () => {
+      active = false;
+      setMounted(false);
+    };
   }, []);
 
   const getRiskColor = (risk: string) => {
@@ -131,7 +137,7 @@ export default function HistoryClient({ scans }: HistoryClientProps) {
         } else {
           throw new Error("Missing ingredients in cached report");
         }
-      } catch (e) {
+      } catch {
         report = reconstructReport(scan);
       }
     } else {
@@ -265,7 +271,7 @@ export default function HistoryClient({ scans }: HistoryClientProps) {
               <div className="flex items-center justify-between px-6 py-4 border-b border-white/5 bg-zinc-900/50">
                 <div className="flex items-center gap-2.5">
                   <div className="w-7 h-7 rounded-lg flex items-center justify-center overflow-hidden">
-                    <img src="/icon.png" alt="Decode Logo" className="w-full h-full object-cover" />
+                    <Image src="/icon.png" alt="Decode Logo" width={28} height={28} className="object-cover" />
                   </div>
                   <h3 className="font-semibold text-zinc-100 text-sm md:text-base truncate max-w-lg">
                     {selectedProductName}
