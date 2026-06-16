@@ -1,0 +1,70 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Ingredient {
+  id                 String           @id @default(cuid())
+  name               String           @unique
+  aliases            String[]
+  origin             String
+  category           String           // "natural", "synthetic", "petroleum-derived", etc.
+  pros               String[]
+  cons               String[]
+  longTermPos        String[]
+  longTermNeg        String[]
+  riskLevel          String           // "low", "moderate", "high"
+  counterNeeded      Boolean
+  counterNutrients   String[]
+  counterSuggestions String[]
+  didYouKnow         String
+  hitCount           Int              @default(0)
+  verifiedAt         DateTime         @default(now())
+  createdAt          DateTime         @default(now())
+  scans              ScanIngredient[]
+  exposures          ExposureTracking[]
+}
+
+model User {
+  id        String             @id // Supabase Auth User ID
+  email     String             @unique
+  scans     Scan[]
+  exposures ExposureTracking[]
+  createdAt DateTime           @default(now())
+}
+
+model Scan {
+  id           String           @id @default(cuid())
+  userId       String
+  productName  String?
+  inputType    String           // "text", "product_name", "photo"
+  rawInput     String
+  overallScore Float
+  summary      String           @default("")
+  ingredients  ScanIngredient[]
+  createdAt    DateTime         @default(now())
+  user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model ScanIngredient {
+  id           String     @id @default(cuid())
+  scanId       String
+  ingredientId String
+  scan         Scan       @relation(fields: [scanId], references: [id], onDelete: Cascade)
+  ingredient   Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
+}
+
+model ExposureTracking {
+  id            String   @id @default(cuid())
+  userId        String
+  ingredientId  String
+  exposureCount Int      @default(1)
+  trend         String   // "increasing", "stable", "decreasing"
+  lastSeenAt    DateTime
+  products      String[]
+  user          User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ingredient    Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
+}
