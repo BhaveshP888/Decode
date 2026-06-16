@@ -209,10 +209,12 @@ ${rawInput}`
       )
     }
 
-    // ── Persist to DB if user is authenticated (best-effort, non-blocking) ──
-    persistScan(rawInput, inputType, result).catch(err =>
-      console.warn('Non-fatal: failed to persist scan', err),
-    )
+    // ── Persist to DB if user is authenticated (awaited to prevent Vercel context termination) ──
+    try {
+      await persistScan(rawInput, inputType, result)
+    } catch (err) {
+      console.warn('Non-fatal: failed to persist scan', err)
+    }
 
     return NextResponse.json(result)
   } catch (error: unknown) {
