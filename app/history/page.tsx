@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Activity, History } from 'lucide-react'
+import HistoryClient from '@/components/history-client'
 
 export default async function HistoryPage() {
   const supabase = await createClient()
@@ -103,35 +104,7 @@ export default async function HistoryPage() {
             </CardHeader>
             <CardContent>
               <ScrollArea className="h-[500px] pr-4">
-                <div className="space-y-4">
-                  {scans.map((scan: (typeof scans)[number]) => (
-                    <div key={scan.id} className="p-4 rounded-xl bg-zinc-950/50 border border-zinc-800/50 hover:border-zinc-700 transition-colors">
-                      <div className="flex justify-between items-start mb-3">
-                        <h4 className="font-semibold text-zinc-100 truncate pr-4 text-sm leading-tight">
-                          {scan.productName || scan.rawInput.substring(0, 40) + '...'}
-                        </h4>
-                        <span className="text-xs text-zinc-500 whitespace-nowrap">
-                          {new Date(scan.createdAt).toLocaleDateString()}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-3 mb-3">
-                        <Badge variant="outline" className="border-zinc-700 text-zinc-300 bg-zinc-900">
-                          Score: {scan.overallScore}/10
-                        </Badge>
-                        <span className="text-xs text-zinc-500">{scan.ingredients.length} ingredients</span>
-                      </div>
-                      <p className="text-sm text-zinc-400 line-clamp-2 leading-relaxed">
-                        {scan.summary}
-                      </p>
-                    </div>
-                  ))}
-                  {scans.length === 0 && (
-                    <div className="flex flex-col items-center justify-center h-40 text-zinc-500 space-y-2">
-                      <History className="w-8 h-8 opacity-20" />
-                      <p>No scans yet.</p>
-                    </div>
-                  )}
-                </div>
+                <HistoryClient scans={scans as any} />
               </ScrollArea>
             </CardContent>
           </Card>

@@ -1,36 +1,138 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 🔍 Decode — Know What You Consume
 
-## Getting Started
+**Decode** is a premium, AI-powered ingredient analysis web application. It allows users to scan, break down, and evaluate ingredient labels from food, drinks, and medicines. By utilizing advanced AI, Decode exposes hidden additives, highlights potential health risks, tracks cumulative exposure over time, and provides personalized weekly wellness swap recommendations.
 
-First, run the development server:
+---
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+## ✨ Key Features
+
+*   **⚡ Single-Shot AI Scan API**: Instantly parses ingredient lists using **Gemini 3.5 Flash** (via the official `@google/genai` Interactions SDK). It normalizes chemical names, classifies additives, and scores safety profiles.
+*   **📊 Cumulative Exposure Profile**: Tracks your consumption frequency of specific additives and flags long-term compound risks over time.
+*   **🗓️ Weekly Wellness Swaps**: Automatically analyzes exposure trends to generate actionable dietary swaps and personalized wellness suggestions.
+*   **🛡️ Hardened Security Gates**: Enforces input size validation (max 5,000 chars) to prevent prompt injection or DoS, filters allowlisted parameters, and secures client interactions using strict HTTP security headers.
+*   **💅 Premium Tech-Minimalist UI**: Built using a modern, dark-themed interface featuring smooth Framer Motion micro-animations, glassmorphic panels, dynamic rating gauges, and responsive bento grid layouts.
+
+---
+
+## 🛠️ Tech Stack
+
+*   **Frontend & Routing**: [Next.js 16 (App Router)](https://nextjs.org/) & [React 19](https://react.dev/)
+*   **Styling & Motion**: [Tailwind CSS](https://tailwindcss.com/) & [Framer Motion](https://motion.dev/)
+*   **Database ORM**: [Prisma](https://www.prisma.io/) with PostgreSQL
+*   **Authentication**: [Supabase Auth](https://supabase.com/docs/guides/auth) (via `@supabase/ssr` & Google OAuth)
+*   **AI Engine**: [Google Gemini API](https://ai.google.dev/) (`gemini-3.5-flash`)
+*   **Runtime & Package Manager**: [Bun](https://bun.sh/)
+
+---
+
+## ⚙️ Project Architecture & Data Flow
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant WebApp as Decode Web App
+    participant ScanAPI as /api/scan
+    participant Gemini as Gemini 3.5 Flash
+    database DB as PostgreSQL (Prisma)
+
+    User->>WebApp: Submit Ingredient Text / Photo
+    WebApp->>ScanAPI: POST Ingredients (Input size validated)
+    ScanAPI->>Gemini: Parse & Score Ingredients (JSON Schema enforced)
+    Gemini-->>ScanAPI: Structured Ingredient Report JSON
+    ScanAPI->>DB: Asynchronously Save Scan & Update Exposure Profile
+    ScanAPI-->>WebApp: return structured Analysis report
+    WebApp-->>User: Render Safety Score & Bento Accordions
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+---
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## 🚀 Getting Started
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### Prerequisites
 
-## Learn More
+- [Bun](https://bun.sh/) installed locally.
+- A PostgreSQL database instance.
+- A Supabase project for authentication.
+- A Google Gemini API Key.
 
-To learn more about Next.js, take a look at the following resources:
+### 1. Clone & Install Dependencies
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+# Clone the repository
+git clone https://github.com/your-username/decode.git
+cd decode
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+# Install dependencies using Bun
+bun install
+```
 
-## Deploy on Vercel
+### 2. Configure Environment Variables
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Create a `.env` file in the root directory and add the following keys:
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```env
+# Database Configuration
+DATABASE_URL="postgresql://username:password@localhost:5432/decode_db?schema=public"
+
+# Supabase Auth Configuration
+NEXT_PUBLIC_SUPABASE_URL="https://your-supabase-project.supabase.co"
+NEXT_PUBLIC_SUPABASE_ANON_KEY="eyJhbGciOi..."
+SUPABASE_SERVICE_ROLE_KEY="eyJhbGciOi..."
+
+# Google Gemini API Key
+GEMINI_API_KEY="AIzaSy..."
+```
+
+### 3. Setup Database Schema
+
+Decode uses Prisma to model its schema. Run the migrations to setup your tables:
+
+```bash
+# Run database migrations
+bunx prisma db push
+
+# Generate the Prisma Client types
+bunx prisma generate
+```
+
+### 4. Run the Development Server
+
+Start the application locally in development mode:
+
+```bash
+bun run dev
+```
+
+Open [http://localhost:3000](http://localhost:3000) (or the port shown in your terminal) in your browser.
+
+---
+
+## 🧪 Commands & Scripts
+
+The following scripts are defined in `package.json`:
+
+| Command | Description |
+|---|---|
+| `bun run dev` | Starts the Next.js local development server. |
+| `bun run build` | Builds the optimized Next.js production bundle. |
+| `bun run start` | Runs the compiled Next.js production build. |
+| `bun run lint` | Performs static ESLint checks across the codebase. |
+
+---
+
+## 🔒 Security Hardening
+
+Decode implements several server-side security checks:
+- **Rate & Size Limits**: Requests to `/api/scan` are capped at 5,000 characters to mitigate DoS and memory exhaustion.
+- **Allowed Parameters**: Only allowlisted `inputType` options (`'text'`, `'product_name'`, `'photo'`) are processed.
+- **Strict Headers**: Configured in [next.config.ts](file:///c:/Users/Plbha/Desktop/contentanalyze/next.config.ts) to inject browser protection:
+  - `X-Frame-Options: DENY` (Anti-Clickjacking)
+  - `X-Content-Type-Options: nosniff` (Anti-MIME Sniffing)
+  - `Referrer-Policy: origin-when-cross-origin`
+  - `X-XSS-Protection: 1; mode=block`
+
+---
+
+## 📄 License
+
+This project is licensed under the MIT License.

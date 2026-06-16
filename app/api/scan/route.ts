@@ -56,6 +56,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'No input provided' }, { status: 400 })
     }
 
+    if (rawInput.length > 5000) {
+      return NextResponse.json(
+        { error: 'Input is too long. The maximum allowed size is 5000 characters.' },
+        { status: 400 }
+      )
+    }
+
+    if (inputType && !['text', 'product_name', 'photo'].includes(inputType)) {
+      return NextResponse.json({ error: 'Invalid input type' }, { status: 400 })
+    }
+
     // Single AI call: extract + analyse + score in one shot.
     // Using gemini-3.5-flash — reliable quota, fast, high quality.
     const prompt = `You are an expert ingredient analyst for packaged foods and medicines.
@@ -269,6 +280,7 @@ async function persistScan(rawInput: string, inputType: string, result: ScanResu
       rawInput,
       overallScore: result.overallScore ?? 0,
       summary: result.summary ?? '',
+      reportJson: result as any,
     },
   })
 

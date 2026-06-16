@@ -45,6 +45,7 @@ model Scan {
   overallScore Float
   summary      String           @default("")
   ingredients  ScanIngredient[]
+  reportJson   Json?
   createdAt    DateTime         @default(now())
   user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
 }

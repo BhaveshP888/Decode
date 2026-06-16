@@ -5,7 +5,6 @@ import Image from 'next/image'
 import { motion } from 'motion/react'
 import { createClient } from '@/lib/supabase/client'
 import {
-  Scan,
   ShieldCheck,
   ChartLineUp,
   CalendarCheck,
@@ -31,8 +30,8 @@ function NavBar() {
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-6 md:px-12 h-16 border-b border-white/5 bg-zinc-950/80 backdrop-blur-xl">
       <div className="flex items-center gap-2">
-        <div className="w-7 h-7 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
-          <Scan size={14} className="text-emerald-400" weight="bold" />
+        <div className="w-7 h-7 rounded-lg flex items-center justify-center overflow-hidden">
+          <img src="/icon.png" alt="Decode Logo" className="w-full h-full object-cover" />
         </div>
         <span className="font-semibold text-white tracking-tight">Decode</span>
       </div>
@@ -289,7 +288,7 @@ export default function LandingPage() {
       {/* ── FOOTER ───────────────────────────────────────────── */}
       <footer className="border-t border-white/5 px-6 md:px-12 py-6 flex items-center justify-between">
         <div className="flex items-center gap-2 text-zinc-600 text-sm">
-          <Scan size={14} className="text-zinc-700" />
+          <img src="/icon.png" alt="Decode Logo" className="w-3.5 h-3.5 object-cover rounded opacity-40" />
           <span>Decode</span>
         </div>
         <p className="text-zinc-700 text-xs">For informational purposes only. Not medical advice.</p>

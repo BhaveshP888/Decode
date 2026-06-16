@@ -136,8 +136,8 @@ export default function Dashboard() {
       {/* Navbar */}
       <nav className="sticky top-0 z-40 flex items-center justify-between px-6 md:px-12 h-16 border-b border-white/5 bg-zinc-950/80 backdrop-blur-xl">
         <div className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
-            <Scan size={14} className="text-emerald-400" weight="bold" />
+          <div className="w-7 h-7 rounded-lg flex items-center justify-center overflow-hidden">
+            <img src="/icon.png" alt="Decode Logo" className="w-full h-full object-cover" />
           </div>
           <span className="font-semibold text-white tracking-tight">Decode</span>
         </div>
