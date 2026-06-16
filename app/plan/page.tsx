@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { AlertTriangle, Apple, ArrowRightLeft, CalendarDays, Loader2 } from "lucide-react";
+import Navbar from "@/components/navbar";
 
 interface NutrientItem {
   nutrient: string;
@@ -48,8 +49,9 @@ export default function WeeklyPlanPage() {
   };
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-50 p-6 md:p-12 font-sans selection:bg-emerald-500/30">
-      <div className="max-w-4xl mx-auto space-y-8">
+    <div className="min-h-screen bg-zinc-950 text-zinc-50 font-sans selection:bg-emerald-500/30">
+      <Navbar />
+      <div className="max-w-4xl mx-auto p-6 md:p-12 space-y-8">
         
         <header className="space-y-4">
           <div className="inline-flex items-center space-x-2 bg-emerald-500/10 text-emerald-400 px-3 py-1 rounded-full text-sm font-medium border border-emerald-500/20">

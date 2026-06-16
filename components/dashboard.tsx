@@ -1,22 +1,18 @@
 "use client";
 
 import { useState, useRef } from "react";
-import { useRouter } from "next/navigation";
-import Image from "next/image";
 import { motion, AnimatePresence } from "motion/react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { createClient } from "@/lib/supabase/client";
+import Navbar from "@/components/navbar";
 import {
   Scan,
   Warning,
   ShieldCheck,
   ChartLineUp,
-  SignOut,
-  CalendarCheck,
   CaretDown,
   Flask,
   Info,
@@ -63,7 +59,6 @@ export default function Dashboard() {
   const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
   const [isFocused, setIsFocused] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const router = useRouter();
 
   const handleInputChange = (val: string) => {
     setInput(val);
@@ -100,11 +95,6 @@ export default function Dashboard() {
     }
   };
 
-  const handleSignOut = async () => {
-    const supabase = createClient();
-    await supabase.auth.signOut();
-    router.push("/landing");
-  };
 
   const getRiskColor = (risk: string) => {
     switch (risk) {
@@ -134,46 +124,7 @@ export default function Dashboard() {
 
   return (
     <div className="min-h-[100dvh] bg-zinc-950 text-zinc-50 font-sans selection:bg-emerald-500/30">
-      {/* Navbar */}
-      <nav className="sticky top-0 z-40 flex items-center justify-between px-6 md:px-12 h-16 border-b border-white/5 bg-zinc-950/80 backdrop-blur-xl">
-        <div className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded-lg flex items-center justify-center overflow-hidden">
-            <Image src="/icon.png" alt="Decode Logo" width={28} height={28} className="object-cover" />
-          </div>
-          <span className="font-semibold text-white tracking-tight">Decode</span>
-        </div>
-
-        <div className="flex items-center gap-1.5">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => router.push("/history")}
-            className="text-zinc-400 hover:text-white hover:bg-zinc-900/60 gap-1.5 h-9 rounded-full px-4"
-          >
-            <ChartLineUp size={15} />
-            <span>Exposure</span>
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => router.push("/plan")}
-            className="text-zinc-400 hover:text-white hover:bg-zinc-900/60 gap-1.5 h-9 rounded-full px-4"
-          >
-            <CalendarCheck size={15} />
-            <span>Plan</span>
-          </Button>
-          <div className="w-px h-4 bg-zinc-800 mx-1" />
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleSignOut}
-            className="text-zinc-500 hover:text-white hover:bg-zinc-900/60 gap-1.5 h-9 rounded-full px-4"
-          >
-            <SignOut size={15} />
-            <span>Sign out</span>
-          </Button>
-        </div>
-      </nav>
+      <Navbar />
 
       <div className="max-w-6xl mx-auto p-6 md:p-12 space-y-10">
         {/* Header */}
