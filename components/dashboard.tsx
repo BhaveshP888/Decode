@@ -133,7 +133,7 @@ export default function Dashboard() {
             Know what you <span className="text-emerald-400">consume.</span>
           </h1>
           <p className="text-zinc-400 text-base md:text-lg max-w-xl leading-relaxed">
-            Scan and break down ingredient labels from food, drinks, and medicine to expose hidden additives and compound risks.
+            Search and break down ingredients from food, drinks, and medicine to expose hidden additives and compound risks.
           </p>
         </header>
 
@@ -153,10 +153,13 @@ export default function Dashboard() {
             >
               <div className="p-6 border-b border-white/5 bg-zinc-900/20 flex items-center justify-between">
                 <div>
-                  <h3 className="font-semibold text-zinc-100 text-sm">Scan Ingredients</h3>
-                  <p className="text-xs text-zinc-500 mt-0.5">Paste comma-separated ingredients list</p>
-                </div>
+                  <div className="flex items-center gap-2 mb-2">
                 <Flask size={18} className="text-zinc-500" />
+                  <h3 className="font-semibold text-zinc-100 text-sm">Analyze contents</h3>
+                  </div>
+                  <p className="text-xs text-zinc-500 mt-0.5">Paste comma-separated ingredients list <br/>or enter name of the item itself</p>
+                  
+                </div>
               </div>
 
               <div className="p-6 space-y-4">
