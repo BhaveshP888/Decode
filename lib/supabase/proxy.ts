@@ -6,6 +6,36 @@ export async function updateSession(request: NextRequest) {
     request,
   })
 
+  const pathname = request.nextUrl.pathname
+
+  // 1. Fast-path: Never run auth network calls on public pages, landing, auth routes, or static files
+  if (
+    pathname.startsWith('/landing') ||
+    pathname.startsWith('/login') ||
+    pathname.startsWith('/auth') ||
+    pathname.startsWith('/api') ||
+    pathname === '/favicon.ico' ||
+    pathname === '/icon.png'
+  ) {
+    return supabaseResponse
+  }
+
+  // 2. Fast-path: Check for Supabase session cookies before querying Supabase over the network
+  const allCookies = request.cookies.getAll()
+  const hasAuthCookie = allCookies.some(cookie =>
+    cookie.name.includes('supabase') ||
+    cookie.name.startsWith('sb-') ||
+    cookie.name.includes('auth-token')
+  )
+
+  if (!hasAuthCookie) {
+    // Unauthenticated user attempting to access a protected route -> redirect immediately with zero network latency
+    const url = request.nextUrl.clone()
+    url.pathname = '/landing'
+    return NextResponse.redirect(url)
+  }
+
+  // 3. User has auth cookies and is visiting a protected route -> validate session
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -27,21 +57,11 @@ export async function updateSession(request: NextRequest) {
     }
   )
 
-  // Do not run code between createServerClient and
-  // supabase.auth.getUser(). A simple mistake could make it very hard to debug
-  // issues with cross-site request forgery attacks.
-  // https://supabase.com/docs/guides/auth/server-side/nextjs
   const {
     data: { user },
   } = await supabase.auth.getUser()
 
-  if (
-    !user &&
-    !request.nextUrl.pathname.startsWith('/landing') &&
-    !request.nextUrl.pathname.startsWith('/login') &&
-    !request.nextUrl.pathname.startsWith('/auth') &&
-    !request.nextUrl.pathname.startsWith('/api')
-  ) {
+  if (!user) {
     const url = request.nextUrl.clone()
     url.pathname = '/landing'
     return NextResponse.redirect(url)
