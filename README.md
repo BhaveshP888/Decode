@@ -1,137 +1,170 @@
 # 🔍 Decode — Know What You Consume
 
-**Decode** is a premium, AI-powered ingredient analysis web application. It allows users to scan, break down, and evaluate ingredient labels from food, drinks, and medicines. By utilizing advanced AI, Decode exposes harmful additives, reveals nutritional value, and gives users a clear understanding of what they are consuming—all within a beautiful, dynamic, and intuitive interface.
+**Decode** is an AI-powered ingredient analysis and product comparison platform for foods, beverages, supplements, and pharmaceuticals. It leverages multimodal computer vision (Google Gemini 3.5 Flash) and OpenFoodFacts catalog intelligence to dissect ingredient labels, calculate objective health risk scores (0–10), detect additive burdens, and recommend cleaner product swaps.
 
 ---
 
-## 🌟 Key Features
+## 🌟 Key Capabilities
 
-- **📸 Intelligent Label Scanning**: Upload or capture ingredient labels to instantly receive a structured analysis of the contents.
-- **🔬 Deep Chemical Breakdown**: Uncovers artificial colors, preservatives, and obscure additives with clear, layman-friendly explanations.
-- **📊 Health Scoring**: Receive a calculated safety rating based on the presence of harmful or ultra-processed ingredients.
-- **📚 Historical Scans**: Save your past analyses to your account, allowing you to build up a personal catalog of product reviews.
-- **🎨 Premium UI/UX**: Designed with sleek glassmorphism, fluid micro-animations, and a highly responsive layout (Tailwind CSS, framer-motion).
+### 1. 📸 Multimodal Ingestion Engine
+- **Photo & Camera OCR**: Upload packaging images or snap labels live on mobile (`capture="environment"`). Gemini 3.5 Flash natively extracts and analyzes text directly from curved bottles, boxes, and wrappers.
+- **Client-Side Canvas Compression**: High-resolution mobile snapshots are automatically downsampled on the client (`maxDim: 1200px`, JPEG quality `0.85`), keeping upload payloads under 500KB for lightning-fast analysis.
+- **Barcode Scanner**: Queries the OpenFoodFacts database for instant zero-token lookups, with an automatic fallback prompt to photo scanning if an unlisted or regional product is scanned.
+- **Direct Text Input**: Paste raw comma-separated ingredient lists or chemical names with auto-growing textarea support.
+
+### 2. 🔬 Deep Biochemical Breakdown & Scoring
+- **0–10 Safety Index**: Aggregated score evaluating toxicity, processing degree, and carcinogenic/inflammatory risk.
+- **Risk Classification**: High, Moderate, and Low concern categorization with visual badges.
+- **Additive Profiling**: Uncovers origin (natural, synthetic, petroleum-derived), intended industry purpose, pros/cons, and long-term physiological exposure effects.
+- **Active Counteractions**: AI-suggested dietary switches and neutralizing micronutrients (e.g. Vitamin C/antioxidants to counter synthetic preservatives).
+
+### 3. ⚖️ Decode Versus (Product Comparison Mode)
+- **Side-by-Side Comparison**: Compare **2 to 4 products** simultaneously in a dedicated comparison workspace (`/compare`).
+- **Winner Determination**: AI evaluates composition purity to declare "The Winner" with a bold headline verdict and winning score.
+- **Category Matrix**: Compares preservatives, gums/emulsifiers, sweeteners, and processing levels across all items.
+- **Server-Side Quota Protection**: Built-in rate limiter capping comparisons to **2 comparisons per 24 hours** per user to preserve API quotas.
+
+### 4. 📊 Cumulative Exposure & History
+- **Exposure Tracker**: Tracks recurring additives across multiple scans to expose hidden compound accumulation.
+- **Interactive Report Modals**: View past scan reports in full high-fidelity bento grid modals via React Portals.
+- **Weekly Wellness Plan**: Aggregates exposure trends to generate personalized dietary swap recommendations.
 
 ---
 
-## 🛠️ Technology Stack
+## 🛠️ Architecture & Tech Stack
 
-Decode is built to be fast, reliable, and visually stunning using modern web technologies:
+```text
+┌────────────────────────────────────────────────────────┐
+│                   Next.js 16 Client                    │
+│   (React 19, Tailwind CSS v4, Motion, Phosphor Icons)  │
+└───────────────┬────────────────────────┬───────────────┘
+                │                        │
+       [Photo / Text / Barcode]     [Auth Sessions]
+                │                        │
+                ▼                        ▼
+┌───────────────────────────────┐ ┌──────────────────────┐
+│  Next.js Server API Routes    │ │    Supabase Auth     │
+│  - POST /api/scan             │ │  (Google OAuth +     │
+│  - POST /api/compare          │ │   SSR Cookies)       │
+│  - GET  /api/barcode          │ └──────────────────────┘
+│  - GET  /api/weekly-plan      │
+└───────┬───────────────┬───────┘
+        │               │
+        ▼               ▼
+┌──────────────┐ ┌──────────────────────────────────────┐
+│ Gemini 3.5   │ │ Supabase PostgreSQL (Prisma 7 ORM)   │
+│ Flash Vision │ │ - User, Scan, Ingredient,            │
+│ & Text AI    │ │   ExposureTracking, Comparison       │
+└──────────────┘ └──────────────────────────────────────┘
+```
 
-- **Frontend**: [Next.js](https://nextjs.org/) (App Router), React, Tailwind CSS, Lucide Icons, Phosphor Icons
-- **Backend**: Next.js Server Actions & API Routes
-- **Database**: PostgreSQL (hosted via [Supabase](https://supabase.com/)), managed using [Prisma ORM](https://www.prisma.io/)
-- **Authentication**: Supabase Auth (Google OAuth & Magic Links)
-- **AI Integration**: [Google Gemini API](https://deepmind.google/technologies/gemini/) (for multi-modal label analysis)
+- **Framework**: [Next.js](https://nextjs.org/) (v16 App Router)
+- **UI & Styling**: [React 19](https://react.dev/), [Tailwind CSS v4](https://tailwindcss.com/), [Motion](https://motion.dev/)
+- **Database & ORM**: PostgreSQL hosted on [Supabase](https://supabase.com/), managed via [Prisma ORM](https://www.prisma.io/) with `@prisma/adapter-pg`
+- **Authentication**: Supabase Auth with Google OAuth (`@supabase/ssr`)
+- **AI Intelligence**: [Google Gemini 3.5 Flash](https://ai.google.dev/) via `@google/genai` Interactions API
 - **Package Manager**: [Bun](https://bun.sh/)
 
 ---
 
-## 🚀 Getting Started
-
-Follow these instructions to set up the project locally.
+## 🚀 Local Development Setup
 
 ### Prerequisites
+- [Bun](https://bun.sh/) (`>= 1.0`)
+- A [Supabase](https://supabase.com/) project (PostgreSQL + Auth)
+- A [Google Gemini API Key](https://aistudio.google.com/)
 
-- [Bun](https://bun.sh/) (v1.x or higher)
-- A [Supabase](https://supabase.com/) account and project
-- A [Google Gemini API](https://aistudio.google.com/) key
-
-### 1. Clone the repository
-
+### 1. Clone the Repository
 ```bash
-git clone <repository-url>
-cd decode
+git clone https://github.com/BhaveshP888/Decode.git
+cd Decode
 ```
 
-### 2. Install dependencies
-
-Since we use Bun, dependency installation is lightning fast:
-
+### 2. Install Dependencies
 ```bash
 bun install
 ```
 
-### 3. Environment Variables
-
-Create a `.env` file in the root directory and populate it with your Supabase and Gemini credentials:
+### 3. Configure Environment Variables
+Create a `.env` file in the project root:
 
 ```env
-# Supabase Configuration
-NEXT_PUBLIC_SUPABASE_URL=your_supabase_project_url
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+# Gemini API Key
+GEMINIAI_API_KEY=your_gemini_api_key_here
 
-# Prisma Database Configuration
-DATABASE_URL=your_postgres_connection_string
+# Supabase Auth & Public Config
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key_here
 
-# Gemini API
-GEMINI_API_KEY=your_gemini_api_key
+# Prisma Database Connections (IPv4 Pooler recommended)
+DATABASE_URL="postgresql://postgres.[project-ref]:[password]@aws-0-[region].pooler.supabase.com:6543/postgres?pgbouncer=true"
+DIRECT_URL="postgresql://postgres.[project-ref]:[password]@aws-0-[region].pooler.supabase.com:5432/postgres"
+
+# Google OAuth (for Supabase provider config)
+OAUTH_CLIENT_ID=your_google_client_id
+OAUTH_CLIENT_SECRET=your_google_client_secret
 ```
 
-### 4. Database Setup
-
-Ensure your Prisma schema is synced with your Supabase Postgres database.
-
+### 4. Push Database Schema & Generate Types
 ```bash
-# Push the schema to your database
 bunx prisma db push
-
-# (Optional) generate the Prisma client
 bunx prisma generate
 ```
 
-### 5. Start the Development Server
-
-Run the local development server:
-
+### 5. Run the Local Development Server
 ```bash
 bun run dev
 ```
-
-Visit [http://localhost:3000](http://localhost:3000) in your browser to start scanning!
+Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 ---
 
-## 💻 Commands Reference
+## 💻 Available Scripts
 
-- `bun run dev`: Start the Next.js development server
-- `bun run build`: Create a production-ready Next.js build
-- `bun run start`: Start the Next.js production server
-- `bun run lint`: Run ESLint checks
-- `bunx prisma db push`: Push schema changes to the database
-- `bunx prisma studio`: Open the visual database browser for Prisma
+| Command | Description |
+|---|---|
+| `bun run dev` | Starts Next.js development server with hot-reload |
+| `bun run build` | Compiles optimized static & dynamic production build |
+| `bun run start` | Runs the production Next.js server |
+| `bun run lint` | Runs ESLint validation across the entire codebase |
+| `bunx prisma db push` | Synchronizes `schema.prisma` definitions with the live database |
+| `bunx prisma studio` | Launches visual web database browser |
 
 ---
 
 ## 📂 Project Structure
 
 ```text
-├── app/                  # Next.js App Router (pages, layouts, API routes)
-├── components/           # Reusable React UI components
-├── lib/                  # Utility functions, Supabase clients, Gemini helpers
-├── prisma/               # Prisma schema and configuration
-├── public/               # Static assets (images, icons)
-└── package.json          # Dependencies and scripts
+├── app/
+│   ├── api/
+│   │   ├── barcode/         # OpenFoodFacts barcode lookup endpoint
+│   │   ├── compare/         # Multi-product comparison & rate limiter endpoint
+│   │   ├── scan/            # Multimodal photo & text Gemini scanning API
+│   │   └── weekly-plan/     # AI weekly dietary swap recommendation API
+│   ├── auth/callback/       # Supabase OAuth PKCE exchange handler
+│   ├── compare/             # Decode Versus side-by-side comparison page
+│   ├── history/             # Cumulative exposure profile & scan history
+│   ├── landing/             # Public landing & product showcase page
+│   ├── login/               # Authentication entry point
+│   ├── plan/                # Personalized weekly wellness counter-plan
+│   ├── layout.tsx           # Root HTML shell & Outfit font configuration
+│   └── page.tsx             # Authenticated dashboard entry point
+├── components/
+│   ├── dashboard.tsx        # Ingestion panel (Text, Camera/Photo, Barcode) & Bento results
+│   ├── history-client.tsx   # Client-side exposure chart & report modal portal
+│   ├── navbar.tsx           # Global authenticated navigation bar
+│   └── ui/                  # Reusable accessible UI primitives
+├── lib/
+│   ├── ai.ts                # Google Gemini SDK client instance
+│   ├── db/index.ts          # Prisma Postgres adapter connection pool
+│   └── supabase/            # Supabase SSR browser & server client helpers
+├── prisma/
+│   └── schema.prisma        # Prisma data models & relational schema
+└── public/                  # Static assets & brand graphics
 ```
-
----
-
-## 🤝 Contributing
-
-Contributions are what make the open source community such an amazing place to learn, inspire, and create. Any contributions you make are **greatly appreciated**.
-
-1. Fork the Project
-2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your Changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the Branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
 
 ---
 
 ## 📄 License
 
-Distributed under the MIT License. See `LICENSE` for more information.
-
----
-
-> Designed & Engineered with focus on **Doubt-Driven Development**, high-end aesthetics, and robust AI integration.
+Distributed under the MIT License. See `LICENSE` for details.
