@@ -9,6 +9,7 @@ import {
   CalendarCheck,
   SignOut,
   House,
+  Scales,
 } from "@phosphor-icons/react";
 
 export default function Navbar() {
@@ -66,6 +67,20 @@ export default function Navbar() {
         >
           <ChartLineUp size={15} weight={isActive("/history") ? "bold" : "regular"} />
           <span className="hidden sm:inline">Exposure</span>
+        </Button>
+
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => router.push("/compare")}
+          className={`gap-1.5 h-9 rounded-full px-3 sm:px-4 transition-all duration-200 ${
+            isActive("/compare")
+              ? "text-emerald-400 bg-emerald-500/5 hover:text-emerald-300 hover:bg-emerald-500/10"
+              : "text-zinc-400 hover:text-white hover:bg-zinc-900/60"
+          }`}
+        >
+          <Scales size={15} weight={isActive("/compare") ? "bold" : "regular"} />
+          <span className="hidden sm:inline">Compare</span>
         </Button>
 
         <Button

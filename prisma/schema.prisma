@@ -29,11 +29,23 @@ model Ingredient {
 }
 
 model User {
-  id        String             @id // Supabase Auth User ID
-  email     String             @unique
-  scans     Scan[]
-  exposures ExposureTracking[]
-  createdAt DateTime           @default(now())
+  id          String             @id // Supabase Auth User ID
+  email       String             @unique
+  scans       Scan[]
+  exposures   ExposureTracking[]
+  comparisons Comparison[]
+  createdAt   DateTime           @default(now())
+}
+
+model Comparison {
+  id           String   @id @default(cuid())
+  userId       String
+  productNames String[]
+  verdict      String   @default("")
+  winnerIndex  Int?
+  reportJson   Json
+  createdAt    DateTime @default(now())
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Scan {

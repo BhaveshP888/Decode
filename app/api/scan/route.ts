@@ -51,15 +51,15 @@ function parseLLMJSON(text: string): ScanResult {
 
 export async function POST(req: NextRequest) {
   try {
-    const { rawInput, inputType } = await req.json()
+    const { rawInput, inputType, image, mimeType, productName } = await req.json()
 
-    if (!rawInput?.trim()) {
-      return NextResponse.json({ error: 'No input provided' }, { status: 400 })
+    if (!rawInput?.trim() && !image) {
+      return NextResponse.json({ error: 'No text or image provided for scan.' }, { status: 400 })
     }
 
-    if (rawInput.length > 5000) {
+    if (rawInput && rawInput.length > 10000) {
       return NextResponse.json(
-        { error: 'Input is too long. The maximum allowed size is 5000 characters.' },
+        { error: 'Input is too long. The maximum allowed size is 10,000 characters.' },
         { status: 400 }
       )
     }
@@ -68,11 +68,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid input type' }, { status: 400 })
     }
 
-    // Single AI call: extract + analyse + score in one shot.
-    // Using gemini-3.5-flash — reliable quota, fast, high quality.
-    const prompt = `You are an expert ingredient analyst for packaged foods and medicines.
+    let interactionInput: string | Array<{ type: 'text'; text: string } | { type: 'image'; data: string; mime_type: string }>
 
-Analyse the following ingredient list and return a single JSON object with this exact structure:
+    const baseSystemPrompt = `You are an expert ingredient analyst for packaged foods, drinks, and medicines.
+Analyze the provided ingredients and return a single JSON object with this exact structure:
 
 {
   "overallScore": <number 0-10, where 10 is safest>,
@@ -107,14 +106,38 @@ Analyse the following ingredient list and return a single JSON object with this 
   ]
 }
 
-Return ONLY the JSON object. No markdown, no explanation, no code fences.
+Return ONLY the JSON object. No markdown, no explanation, no code fences.`
+
+    if (image && (inputType === 'photo' || !rawInput)) {
+      const cleanBase64 = String(image).replace(/^data:image\/[a-zA-Z0-9+]+;base64,/, '').trim()
+      const validMime = mimeType && ['image/jpeg', 'image/png', 'image/webp'].includes(mimeType)
+        ? mimeType
+        : 'image/jpeg'
+
+      interactionInput = [
+        {
+          type: 'text',
+          text: `${baseSystemPrompt}
+
+Examine the product packaging image carefully. Extract all visible ingredients, additives, allergens, and dietary warnings, then produce the requested JSON report.
+${rawInput ? `Additional context: ${rawInput}` : ''}`
+        },
+        {
+          type: 'image',
+          data: cleanBase64,
+          mime_type: validMime
+        }
+      ]
+    } else {
+      interactionInput = `${baseSystemPrompt}
 
 Ingredient list to analyse:
 ${rawInput}`
+    }
 
     const interaction = await ai.interactions.create({
       model: 'gemini-3.5-flash',
-      input: prompt,
+      input: interactionInput as Parameters<typeof ai.interactions.create>[0]['input'],
       response_format: {
         type: 'text',
         mime_type: 'application/json',
@@ -211,7 +234,8 @@ ${rawInput}`
 
     // ── Persist to DB if user is authenticated (awaited to prevent Vercel context termination) ──
     try {
-      await persistScan(rawInput, inputType, result)
+      const fallbackInput = rawInput || (productName ? `Photo scan of ${productName}` : 'Photo scan label')
+      await persistScan(fallbackInput, inputType ?? 'text', result, productName)
     } catch (err) {
       console.warn('Non-fatal: failed to persist scan', err)
     }
@@ -235,7 +259,12 @@ ${rawInput}`
  * Fire-and-forget: cache ingredients and log the scan for authenticated users.
  * Never blocks or throws to the caller.
  */
-async function persistScan(rawInput: string, inputType: string, result: ScanResult) {
+async function persistScan(
+  rawInput: string,
+  inputType: string,
+  result: ScanResult,
+  productName?: string,
+) {
   const supabase = await createClient()
   const {
     data: { user },
@@ -279,6 +308,7 @@ async function persistScan(rawInput: string, inputType: string, result: ScanResu
   const scan = await prisma.scan.create({
     data: {
       userId: user.id,
+      productName: productName ?? null,
       inputType: inputType ?? 'text',
       rawInput,
       overallScore: result.overallScore ?? 0,

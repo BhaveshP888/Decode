@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, ChangeEvent, DragEvent } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
@@ -15,6 +15,11 @@ import {
   ChartLineUp,
   CaretDown,
   Flask,
+  Camera,
+  Barcode,
+  UploadSimple,
+  X,
+  MagnifyingGlass,
   Info,
 } from "@phosphor-icons/react";
 
@@ -51,14 +56,41 @@ interface ScanResult {
   ingredients: ScanIngredient[];
 }
 
+interface BarcodeProduct {
+  found: boolean;
+  barcode?: string;
+  productName?: string;
+  ingredientsText?: string;
+  imageUrl?: string;
+  brands?: string;
+  message?: string;
+  hasIngredients?: boolean;
+}
+
+type ScanMode = "text" | "photo" | "barcode";
+
 export default function Dashboard() {
+  const [mode, setMode] = useState<ScanMode>("text");
   const [input, setInput] = useState("");
+  const [productName, setProductName] = useState("");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<ScanResult | null>(null);
   const [error, setError] = useState("");
   const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
   const [isFocused, setIsFocused] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Photo State
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const [photoBase64, setPhotoBase64] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+
+  // Barcode State
+  const [barcodeQuery, setBarcodeQuery] = useState("");
+  const [barcodeLoading, setBarcodeLoading] = useState(false);
+  const [barcodeProduct, setBarcodeProduct] = useState<BarcodeProduct | null>(null);
 
   const handleInputChange = (val: string) => {
     setInput(val);
@@ -68,18 +100,121 @@ export default function Dashboard() {
     }
   };
 
+  // Client-side image compression using canvas
+  const processImageFile = (file: File) => {
+    if (!file.type.startsWith("image/")) {
+      setError("Please select a valid image file (JPEG, PNG, WebP).");
+      return;
+    }
+    setError("");
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = document.createElement("img");
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        const maxDim = 1200;
+        let { width, height } = img;
+
+        if (width > maxDim || height > maxDim) {
+          if (width > height) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          } else {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          const compressedDataUrl = canvas.toDataURL("image/jpeg", 0.85);
+          setPhotoPreview(compressedDataUrl);
+          setPhotoBase64(compressedDataUrl);
+        }
+      };
+      img.src = e.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      processImageFile(file);
+    }
+  };
+
+  const handleDrop = (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) {
+      processImageFile(file);
+    }
+  };
+
+  const handleBarcodeLookup = async (codeToLookup?: string) => {
+    const code = (codeToLookup || barcodeQuery).trim();
+    if (!code) return;
+
+    setBarcodeLoading(true);
+    setError("");
+    setBarcodeProduct(null);
+
+    try {
+      const res = await fetch(`/api/barcode?code=${encodeURIComponent(code)}`);
+      const data = (await res.json()) as BarcodeProduct;
+      setBarcodeProduct(data);
+
+      if (data.found && data.ingredientsText) {
+        setInput(data.ingredientsText);
+        if (data.productName) setProductName(data.productName);
+      }
+    } catch {
+      setError("Unable to lookup barcode. Please check your internet connection.");
+    } finally {
+      setBarcodeLoading(false);
+    }
+  };
+
   const handleScan = async () => {
-    if (!input.trim()) return;
+    if (mode === "text" && !input.trim()) return;
+    if (mode === "photo" && !photoBase64 && !input.trim()) {
+      setError("Please select or capture a photo of the ingredients label first.");
+      return;
+    }
+    if (mode === "barcode" && !input.trim() && !photoBase64) {
+      setError("Please enter or look up a product barcode first.");
+      return;
+    }
+
     setLoading(true);
     setError("");
     setResult(null);
     setExpandedIdx(null);
 
     try {
+      const payload: Record<string, unknown> = {
+        inputType: mode === "photo" ? "photo" : "text",
+        productName: productName.trim() || undefined,
+      };
+
+      if (mode === "photo" && photoBase64) {
+        payload.image = photoBase64;
+        payload.mimeType = "image/jpeg";
+        payload.rawInput = input.trim() || undefined;
+      } else {
+        payload.rawInput = input.trim();
+      }
+
       const res = await fetch("/api/scan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rawInput: input, inputType: "text" }),
+        body: JSON.stringify(payload),
       });
 
       if (!res.ok) {
@@ -94,7 +229,6 @@ export default function Dashboard() {
       setLoading(false);
     }
   };
-
 
   const getRiskColor = (risk: string) => {
     switch (risk) {
@@ -133,7 +267,7 @@ export default function Dashboard() {
             Know what you <span className="text-emerald-400">consume.</span>
           </h1>
           <p className="text-zinc-400 text-base md:text-lg max-w-xl leading-relaxed">
-            Search and break down ingredients from food, drinks, and medicine to expose hidden additives and compound risks.
+            Scan ingredients via photo, barcode, or text to expose hidden additives, artificial compounds, and health risks.
           </p>
         </header>
 
@@ -151,42 +285,340 @@ export default function Dashboard() {
               transition={{ duration: 0.2 }}
               className="rounded-2xl border bg-zinc-900/40 backdrop-blur-md overflow-hidden"
             >
-              <div className="p-6 border-b border-white/5 bg-zinc-900/20 flex items-center justify-between">
+              {/* Top Bar with Mode Switcher */}
+              <div className="p-4 sm:p-6 border-b border-white/5 bg-zinc-900/20 flex flex-wrap items-center justify-between gap-4">
                 <div>
-                  <div className="flex items-center gap-2 mb-2">
-                <Flask size={18} className="text-zinc-500" />
-                  <h3 className="font-semibold text-zinc-100 text-sm">Analyze contents</h3>
+                  <div className="flex items-center gap-2">
+                    <Flask size={18} className="text-emerald-400" />
+                    <h3 className="font-semibold text-zinc-100 text-sm">Analyze Product Label</h3>
                   </div>
-                  <p className="text-xs text-zinc-500 mt-0.5">Paste comma-separated ingredients list <br/>or enter name of the item itself</p>
-                  
+                  <p className="text-xs text-zinc-500 mt-0.5">
+                    {mode === "text" && "Type or paste comma-separated ingredients"}
+                    {mode === "photo" && "Upload or snap a photo of the nutrition/ingredient label"}
+                    {mode === "barcode" && "Scan product barcode with instant OpenFoodFacts lookup"}
+                  </p>
+                </div>
+
+                {/* Scan Mode Toggle Tabs */}
+                <div className="flex items-center gap-1 p-1 bg-zinc-950/80 rounded-xl border border-white/5">
+                  <button
+                    type="button"
+                    onClick={() => setMode("text")}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                      mode === "text"
+                        ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shadow-sm"
+                        : "text-zinc-400 hover:text-white"
+                    }`}
+                  >
+                    <Flask size={14} />
+                    <span>Text</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setMode("photo")}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                      mode === "photo"
+                        ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shadow-sm"
+                        : "text-zinc-400 hover:text-white"
+                    }`}
+                  >
+                    <Camera size={14} />
+                    <span>Photo / Camera</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setMode("barcode")}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                      mode === "barcode"
+                        ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shadow-sm"
+                        : "text-zinc-400 hover:text-white"
+                    }`}
+                  >
+                    <Barcode size={14} />
+                    <span>Barcode</span>
+                  </button>
                 </div>
               </div>
 
-              <div className="p-6 space-y-4">
-                <Textarea
-                  ref={textareaRef}
-                  placeholder="e.g. Water, Sugar, High Fructose Corn Syrup, Sodium Benzoate, Red 40, Citric Acid..."
-                  className="min-h-[120px] max-h-[500px] bg-zinc-950/60 border-zinc-800/80 text-zinc-300 placeholder:text-zinc-700 focus-visible:ring-emerald-500/20 focus-visible:border-emerald-500/30 rounded-xl resize-none leading-relaxed text-sm p-4 overflow-hidden"
-                  value={input}
-                  onFocus={() => setIsFocused(true)}
-                  onBlur={() => setIsFocused(false)}
-                  onChange={(e) => handleInputChange(e.target.value)}
-                />
+              {/* Mode-Specific Input Areas */}
+              <div className="p-4 sm:p-6 space-y-4">
+                {/* 1. TEXT MODE */}
+                {mode === "text" && (
+                  <div className="space-y-3">
+                    <input
+                      type="text"
+                      placeholder="Optional Product Name (e.g. Diet Coke, Amul Butter)"
+                      value={productName}
+                      onChange={(e) => setProductName(e.target.value)}
+                      className="w-full h-10 px-4 bg-zinc-950/60 border border-zinc-800/80 rounded-xl text-xs sm:text-sm text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:border-emerald-500/30 focus:ring-1 focus:ring-emerald-500/20"
+                    />
 
+                    <Textarea
+                      ref={textareaRef}
+                      placeholder="e.g. Carbonated Water, Sugar, High Fructose Corn Syrup, Caramel Color (E150d), Phosphoric Acid, Natural Flavors, Caffeine, Sodium Benzoate..."
+                      className="min-h-[130px] max-h-[500px] bg-zinc-950/60 border-zinc-800/80 text-zinc-300 placeholder:text-zinc-700 focus-visible:ring-emerald-500/20 focus-visible:border-emerald-500/30 rounded-xl resize-none leading-relaxed text-sm p-4 overflow-hidden"
+                      value={input}
+                      onFocus={() => setIsFocused(true)}
+                      onBlur={() => setIsFocused(false)}
+                      onChange={(e) => handleInputChange(e.target.value)}
+                    />
+                  </div>
+                )}
+
+                {/* 2. PHOTO / CAMERA MODE */}
+                {mode === "photo" && (
+                  <div className="space-y-4">
+                    <input
+                      type="text"
+                      placeholder="Optional Product Name (e.g. Haldiram's Bhujia)"
+                      value={productName}
+                      onChange={(e) => setProductName(e.target.value)}
+                      className="w-full h-10 px-4 bg-zinc-950/60 border border-zinc-800/80 rounded-xl text-xs sm:text-sm text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:border-emerald-500/30 focus:ring-1 focus:ring-emerald-500/20"
+                    />
+
+                    {/* Hidden Native File & Camera Inputs */}
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      accept="image/*"
+                      onChange={handleFileChange}
+                      className="hidden"
+                    />
+                    <input
+                      type="file"
+                      ref={cameraInputRef}
+                      accept="image/*"
+                      capture="environment"
+                      onChange={handleFileChange}
+                      className="hidden"
+                    />
+
+                    {!photoPreview ? (
+                      <div
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          setIsDragging(true);
+                        }}
+                        onDragLeave={() => setIsDragging(false)}
+                        onDrop={handleDrop}
+                        className={`border-2 border-dashed rounded-2xl p-8 sm:p-12 text-center transition-all cursor-pointer ${
+                          isDragging
+                            ? "border-emerald-500 bg-emerald-500/5"
+                            : "border-zinc-800 hover:border-zinc-700 bg-zinc-950/40"
+                        }`}
+                        onClick={() => fileInputRef.current?.click()}
+                      >
+                        <div className="flex flex-col items-center justify-center space-y-4">
+                          <div className="w-14 h-14 rounded-2xl bg-zinc-900 border border-white/5 flex items-center justify-center text-zinc-400 group-hover:scale-105 transition-transform">
+                            <UploadSimple size={24} className="text-emerald-400" />
+                          </div>
+
+                          <div className="space-y-1">
+                            <p className="text-sm font-semibold text-zinc-200">
+                              Drop label photo here or{" "}
+                              <span className="text-emerald-400 underline">browse files</span>
+                            </p>
+                            <p className="text-xs text-zinc-500">
+                              Supports JPG, PNG, WebP up to 10MB • Clear back packaging works best
+                            </p>
+                          </div>
+
+                          <div className="flex items-center gap-3 pt-2">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                cameraInputRef.current?.click();
+                              }}
+                              className="rounded-full bg-zinc-900 border-white/10 hover:bg-zinc-800 text-zinc-200 text-xs gap-1.5"
+                            >
+                              <Camera size={14} className="text-emerald-400" />
+                              <span>Take Photo</span>
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="relative rounded-2xl border border-white/10 bg-zinc-950/80 p-4 flex flex-col sm:flex-row items-center gap-4">
+                        <div className="relative w-full sm:w-48 h-44 rounded-xl overflow-hidden bg-zinc-900 border border-white/5 shrink-0">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={photoPreview}
+                            alt="Scanned Label Preview"
+                            className="w-full h-full object-cover"
+                          />
+                        </div>
+
+                        <div className="flex-1 space-y-2 text-center sm:text-left">
+                          <div className="flex items-center justify-center sm:justify-start gap-2">
+                            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                            <span className="text-xs font-semibold text-emerald-400 uppercase tracking-wider">
+                              Label Image Ready
+                            </span>
+                          </div>
+                          <p className="text-sm font-medium text-zinc-200">
+                            Gemini 3.5 Flash will extract and analyze all visible ingredients and warnings.
+                          </p>
+                          <div className="flex items-center justify-center sm:justify-start gap-2 pt-2">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => fileInputRef.current?.click()}
+                              className="rounded-full bg-zinc-900 border-white/10 hover:bg-zinc-800 text-zinc-300 text-xs"
+                            >
+                              Change Image
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                setPhotoPreview(null);
+                                setPhotoBase64(null);
+                              }}
+                              className="rounded-full text-red-400 hover:bg-red-500/10 text-xs gap-1"
+                            >
+                              <X size={14} />
+                              Remove
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* 3. BARCODE MODE */}
+                {mode === "barcode" && (
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-2">
+                      <div className="relative flex-1">
+                        <Barcode
+                          size={18}
+                          className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-500"
+                        />
+                        <input
+                          type="text"
+                          placeholder="Enter 8 to 14 digit barcode (e.g. 8901030383849)"
+                          value={barcodeQuery}
+                          onChange={(e) => setBarcodeQuery(e.target.value)}
+                          onKeyDown={(e) => e.key === "Enter" && handleBarcodeLookup()}
+                          className="w-full h-11 pl-10 pr-4 bg-zinc-950/60 border border-zinc-800/80 rounded-xl text-xs sm:text-sm text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:border-emerald-500/30 focus:ring-1 focus:ring-emerald-500/20"
+                        />
+                      </div>
+                      <Button
+                        type="button"
+                        onClick={() => handleBarcodeLookup()}
+                        disabled={barcodeLoading || !barcodeQuery.trim()}
+                        className="bg-zinc-900 hover:bg-zinc-800 border border-white/10 text-white rounded-xl h-11 px-5 text-xs font-semibold gap-1.5"
+                      >
+                        {barcodeLoading ? (
+                          <span className="w-4 h-4 border-2 border-zinc-400 border-t-white rounded-full animate-spin" />
+                        ) : (
+                          <MagnifyingGlass size={15} />
+                        )}
+                        <span>Lookup</span>
+                      </Button>
+                    </div>
+
+                    {/* Barcode Result Feedback */}
+                    {barcodeProduct && (
+                      <div className="rounded-xl border border-white/10 bg-zinc-950/60 p-4 space-y-3">
+                        {barcodeProduct.found ? (
+                          <div className="flex items-start gap-4">
+                            {barcodeProduct.imageUrl && (
+                              <div className="relative w-16 h-16 rounded-lg overflow-hidden bg-zinc-900 border border-white/5 shrink-0">
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img
+                                  src={barcodeProduct.imageUrl}
+                                  alt="Product"
+                                  className="w-full h-full object-cover"
+                                />
+                              </div>
+                            )}
+                            <div className="flex-1 space-y-1">
+                              <span className="text-[10px] font-semibold text-emerald-400 uppercase tracking-widest">
+                                OpenFoodFacts Match Found
+                              </span>
+                              <h4 className="text-sm font-semibold text-white">
+                                {barcodeProduct.productName}
+                              </h4>
+                              {barcodeProduct.brands && (
+                                <p className="text-xs text-zinc-500">{barcodeProduct.brands}</p>
+                              )}
+                              {barcodeProduct.hasIngredients ? (
+                                <p className="text-xs text-zinc-400 line-clamp-2 pt-1">
+                                  {barcodeProduct.ingredientsText}
+                                </p>
+                              ) : (
+                                <p className="text-xs text-amber-400 pt-1">
+                                  ⚠️ Product found, but ingredients text was unlisted in catalog. Please snap a photo instead.
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 text-center sm:text-left">
+                            <div className="space-y-0.5">
+                              <p className="text-xs font-semibold text-amber-400">
+                                Barcode #{barcodeProduct.barcode} not found in open database
+                              </p>
+                              <p className="text-xs text-zinc-500">
+                                Common for regional Indian products. Snap a label photo to decode instantly with Gemini.
+                              </p>
+                            </div>
+                            <Button
+                              type="button"
+                              size="sm"
+                              onClick={() => {
+                                setMode("photo");
+                                cameraInputRef.current?.click();
+                              }}
+                              className="rounded-full bg-emerald-600 hover:bg-emerald-500 text-white text-xs gap-1.5 shrink-0"
+                            >
+                              <Camera size={14} />
+                              <span>Switch to Photo Scan</span>
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Primary Scan Button */}
                 <Button
                   onClick={handleScan}
-                  disabled={loading || !input.trim()}
-                  className="w-full bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl h-11 font-medium transition-all active:scale-[0.98] shadow-[0_0_20px_-5px_rgba(16,185,129,0.3)] disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer"
+                  disabled={
+                    loading ||
+                    (mode === "text" && !input.trim()) ||
+                    (mode === "photo" && !photoBase64 && !input.trim()) ||
+                    (mode === "barcode" && !input.trim() && !photoBase64)
+                  }
+                  className="w-full bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl h-12 font-semibold transition-all active:scale-[0.98] shadow-[0_0_20px_-5px_rgba(16,185,129,0.3)] disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer mt-2"
                 >
                   {loading ? (
                     <>
                       <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      <span>Decoding Label...</span>
+                      <span>
+                        {mode === "photo" ? "Reading Image & Decoding..." : "Decoding Ingredients..."}
+                      </span>
                     </>
                   ) : (
                     <>
                       <Scan size={16} weight="bold" />
-                      <span>Decode Ingredients</span>
+                      <span>
+                        {mode === "photo"
+                          ? "Decode Photo Label"
+                          : mode === "barcode"
+                          ? "Decode Scanned Product"
+                          : "Decode Ingredients"}
+                      </span>
                     </>
                   )}
                 </Button>
@@ -499,7 +931,7 @@ export default function Dashboard() {
                   <div className="space-y-1 max-w-sm">
                     <h4 className="text-sm font-medium text-zinc-300">Ready to Scan</h4>
                     <p className="text-xs text-zinc-500 leading-relaxed">
-                      Enter ingredients above to analyze safety and potential health risks.
+                      Select text, camera photo, or barcode above to analyze safety and potential health risks.
                     </p>
                   </div>
                 </motion.div>
