@@ -1,21 +1,29 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
+import { timingSafeEqual } from 'node:crypto'
 
 export const dynamic = 'force-dynamic'
 
 export async function GET(request: Request) {
   try {
-    // Optional Vercel Cron Secret validation
-    const authHeader = request.headers.get('authorization')
-    const url = new URL(request.url)
-    const secretParam = url.searchParams.get('key')
+    const cronSecret = process.env.CRON_SECRET
+    if (!cronSecret) {
+      return NextResponse.json(
+        { error: 'Server misconfiguration: CRON_SECRET is required' },
+        { status: 500 }
+      )
+    }
 
-    if (process.env.CRON_SECRET) {
-      const isValidBearer = authHeader === `Bearer ${process.env.CRON_SECRET}`
-      const isValidParam = secretParam === process.env.CRON_SECRET
-      if (!isValidBearer && !isValidParam) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-      }
+    const authHeader = request.headers.get('authorization')
+    const expectedHeader = `Bearer ${cronSecret}`
+
+    const isAuthorized =
+      Boolean(authHeader) &&
+      authHeader!.length === expectedHeader.length &&
+      timingSafeEqual(Buffer.from(authHeader!), Buffer.from(expectedHeader))
+
+    if (!isAuthorized) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     // 1. Direct database query via Prisma to reset Supabase compute idle timer
@@ -35,8 +43,8 @@ export async function GET(request: Request) {
           },
         })
         restStatus = `status_${restRes.status}`
-      } catch (err: unknown) {
-        restStatus = err instanceof Error ? err.message : 'failed'
+      } catch {
+        restStatus = 'failed'
       }
     }
 
@@ -52,7 +60,7 @@ export async function GET(request: Request) {
     return NextResponse.json(
       {
         success: false,
-        error: error instanceof Error ? error.message : 'Unknown database error',
+        error: 'Keepalive operation failed',
         timestamp: new Date().toISOString(),
       },
       { status: 500 }

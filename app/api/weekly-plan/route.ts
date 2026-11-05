@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { ai } from "@/lib/ai";
 import { prisma } from "@/lib/db";
 import { createClient } from "@/lib/supabase/server";
+import { WeeklyPlanSchema } from "@/lib/schemas";
 
 function parseLLMJSON(text: string) {
   try {
@@ -112,16 +113,17 @@ export async function GET() {
 
     const lastStep = interaction.steps.at(-1) as { content?: Array<{ text?: string }> } | undefined;
     const content = lastStep?.content?.[0]?.text;
-    const planData = content ? parseLLMJSON(content) : null;
+    const rawData = content ? parseLLMJSON(content) : null;
+    const validation = WeeklyPlanSchema.safeParse(rawData);
 
-    if (!planData) {
-      throw new Error("Failed to generate plan");
+    if (!validation.success) {
+      console.error("Weekly plan schema validation failed:", validation.error.format());
+      return NextResponse.json({ error: "Failed to generate valid plan format" }, { status: 502 });
     }
 
-    return NextResponse.json(planData);
+    return NextResponse.json(validation.data);
   } catch (error: unknown) {
     console.error("Error generating weekly plan:", error);
-    const message = error instanceof Error ? error.message : "Internal Server Error";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }
 }
