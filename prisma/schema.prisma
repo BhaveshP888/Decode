@@ -46,6 +46,8 @@ model Comparison {
   reportJson   Json
   createdAt    DateTime @default(now())
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 model Scan {
@@ -60,6 +62,8 @@ model Scan {
   reportJson   Json?
   createdAt    DateTime         @default(now())
   user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 model ScanIngredient {
@@ -68,6 +72,9 @@ model ScanIngredient {
   ingredientId String
   scan         Scan       @relation(fields: [scanId], references: [id], onDelete: Cascade)
   ingredient   Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
+
+  @@index([scanId])
+  @@index([ingredientId])
 }
 
 model ExposureTracking {
@@ -80,4 +87,7 @@ model ExposureTracking {
   products      String[]
   user          User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   ingredient    Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([ingredientId])
 }
