@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, ChangeEvent, DragEvent } from "react";
+import { useState, useEffect, useRef, ChangeEvent, DragEvent } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
@@ -8,6 +8,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import Navbar from "@/components/navbar";
+import { BentoScanHeader, type AllergenAlert } from "@/components/bento-scan-header";
+import {
+  HouseholdStatusBar,
+  type HouseholdProfileMember,
+} from "@/components/household-status-bar";
 import {
   Scan,
   Warning,
@@ -41,6 +46,7 @@ interface ScanIngredient {
     suggestions?: string[];
   };
   didYouKnow?: string;
+  allergenConflict?: boolean;
 }
 
 interface ScanResult {
@@ -54,7 +60,35 @@ interface ScanResult {
     easiestFix: string;
   };
   ingredients: ScanIngredient[];
+  allergenAlert?: AllergenAlert;
 }
+
+interface ProfileApiResponse {
+  profile: {
+    id: string;
+    allergens: string[];
+    dietaryRegimes: string[];
+    healthConditions: string[];
+    householdMembers?: Array<{
+      id: string;
+      name: string;
+      allergens: string[];
+      dietaryRegimes: string[];
+      healthConditions: string[];
+    }>;
+  } | null;
+}
+
+const DEFAULT_HOUSEHOLD_MEMBERS: HouseholdProfileMember[] = [
+  {
+    id: "self",
+    name: "Self",
+    role: "Self",
+    allergens: [],
+    dietaryRegimes: [],
+    healthConditions: [],
+  },
+];
 
 interface BarcodeProduct {
   found: boolean;
@@ -91,6 +125,49 @@ export default function Dashboard() {
   const [barcodeQuery, setBarcodeQuery] = useState("");
   const [barcodeLoading, setBarcodeLoading] = useState(false);
   const [barcodeProduct, setBarcodeProduct] = useState<BarcodeProduct | null>(null);
+
+  // Household & User Safety Profile State
+  const [householdMembers, setHouseholdMembers] = useState<HouseholdProfileMember[]>(
+    DEFAULT_HOUSEHOLD_MEMBERS
+  );
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    async function loadProfile() {
+      try {
+        const res = await fetch("/api/profile", { signal: controller.signal });
+        if (!res.ok) return;
+        const data = (await res.json()) as ProfileApiResponse;
+        if (!data.profile) return;
+
+        const mappedMembers: HouseholdProfileMember[] = [
+          {
+            id: "self",
+            name: "Self",
+            role: "Self",
+            allergens: data.profile.allergens ?? [],
+            dietaryRegimes: data.profile.dietaryRegimes ?? [],
+            healthConditions: data.profile.healthConditions ?? [],
+          },
+          ...(data.profile.householdMembers ?? []).map((member) => ({
+            id: member.id,
+            name: member.name,
+            allergens: member.allergens ?? [],
+            dietaryRegimes: member.dietaryRegimes ?? [],
+            healthConditions: member.healthConditions ?? [],
+          })),
+        ];
+
+        setHouseholdMembers(mappedMembers);
+      } catch {
+        // Non-fatal: gracefully keep default household state when unauthenticated or offline
+      }
+    }
+
+    loadProfile();
+    return () => controller.abort();
+  }, []);
 
   const handleInputChange = (val: string) => {
     setInput(val);
@@ -655,58 +732,44 @@ export default function Dashboard() {
                   transition={{ duration: 0.4 }}
                   className="space-y-5"
                 >
-                  {/* Bento Score & Summary Grid */}
-                  <div className="grid grid-cols-1 md:grid-cols-12 gap-5">
-                    {/* Score Card */}
-                    <div className="md:col-span-4 rounded-2xl border border-white/5 bg-zinc-900/40 backdrop-blur-md p-6 flex flex-col items-center justify-center text-center">
-                      <span className="text-[10px] font-semibold text-zinc-500 uppercase tracking-widest">
-                        Safety Score
-                      </span>
-                      <div className="text-6xl font-bold text-white tracking-tighter mt-2 mb-3">
-                        {result.overallScore}
-                        <span className="text-xl text-zinc-600">/10</span>
-                      </div>
-                      {/* Score Gauge */}
-                      <div className="w-full h-2 bg-zinc-950 rounded-full overflow-hidden border border-white/5">
-                        <motion.div
-                          initial={{ width: 0 }}
-                          animate={{ width: `${result.overallScore * 10}%` }}
-                          transition={{ duration: 0.8, ease: "easeOut" }}
-                          className={`h-full rounded-full ${
-                            result.overallScore >= 7
-                              ? "bg-emerald-500"
-                              : result.overallScore >= 4
-                              ? "bg-amber-500"
-                              : "bg-red-500"
-                          }`}
-                        />
-                      </div>
+                  {/* Allergen Safety Precedence & Biochemical Purity Header */}
+                  <BentoScanHeader
+                    purityScore={result.overallScore}
+                    productName={productName.trim() || barcodeProduct?.productName || undefined}
+                    allergenAlert={result.allergenAlert}
+                  />
+
+                  {/* Household Compatibility Status Bar */}
+                  <HouseholdStatusBar
+                    members={householdMembers}
+                    ingredients={result.ingredients}
+                    allergenAlert={result.allergenAlert}
+                    overallScore={result.overallScore}
+                  />
+
+                  {/* Analysis Summary Card */}
+                  <div className="rounded-2xl border border-white/5 bg-zinc-900/40 backdrop-blur-md p-6 flex flex-col justify-between space-y-4">
+                    <div className="space-y-2">
+                      <h4 className="text-xs font-semibold text-zinc-400 uppercase tracking-widest flex items-center gap-1.5">
+                        <ChartLineUp size={14} className="text-emerald-400" />
+                        <span>Analysis Summary</span>
+                      </h4>
+                      <p className="text-zinc-300 text-sm leading-relaxed">{result.summary}</p>
                     </div>
 
-                    {/* Summary Card */}
-                    <div className="md:col-span-8 rounded-2xl border border-white/5 bg-zinc-900/40 backdrop-blur-md p-6 flex flex-col justify-between space-y-4">
-                      <div className="space-y-2">
-                        <h4 className="text-xs font-semibold text-zinc-400 uppercase tracking-widest flex items-center gap-1.5">
-                          <ChartLineUp size={14} className="text-emerald-400" />
-                          <span>Analysis Summary</span>
-                        </h4>
-                        <p className="text-zinc-300 text-sm leading-relaxed">{result.summary}</p>
-                      </div>
-
-                      <div className="flex gap-4 border-t border-white/5 pt-3">
-                        <span className="flex items-center gap-1.5 text-xs font-medium text-zinc-400">
-                          <span className="w-2.5 h-2.5 rounded-full bg-red-500/80 border border-red-500/20 shadow-[0_0_8px_rgba(239,68,68,0.4)]" />
-                          {result.scoreBreakdown?.highConcernCount ?? 0} High
-                        </span>
-                        <span className="flex items-center gap-1.5 text-xs font-medium text-zinc-400">
-                          <span className="w-2.5 h-2.5 rounded-full bg-amber-500/80 border border-amber-500/20 shadow-[0_0_8px_rgba(245,158,11,0.4)]" />
-                          {result.scoreBreakdown?.moderateConcernCount ?? 0} Moderate
-                        </span>
-                        <span className="flex items-center gap-1.5 text-xs font-medium text-zinc-400">
-                          <span className="w-2.5 h-2.5 rounded-full bg-emerald-500/80 border border-emerald-500/20 shadow-[0_0_8px_rgba(16,185,129,0.4)]" />
-                          {result.scoreBreakdown?.lowConcernCount ?? 0} Low
-                        </span>
-                      </div>
+                    <div className="flex flex-wrap gap-4 border-t border-white/5 pt-3">
+                      <span className="flex items-center gap-1.5 text-xs font-medium text-zinc-400">
+                        <span className="w-2.5 h-2.5 rounded-full bg-red-500/80 border border-red-500/20 shadow-[0_0_8px_rgba(239,68,68,0.4)]" />
+                        {result.scoreBreakdown?.highConcernCount ?? 0} High
+                      </span>
+                      <span className="flex items-center gap-1.5 text-xs font-medium text-zinc-400">
+                        <span className="w-2.5 h-2.5 rounded-full bg-amber-500/80 border border-amber-500/20 shadow-[0_0_8px_rgba(245,158,11,0.4)]" />
+                        {result.scoreBreakdown?.moderateConcernCount ?? 0} Moderate
+                      </span>
+                      <span className="flex items-center gap-1.5 text-xs font-medium text-zinc-400">
+                        <span className="w-2.5 h-2.5 rounded-full bg-emerald-500/80 border border-emerald-500/20 shadow-[0_0_8px_rgba(16,185,129,0.4)]" />
+                        {result.scoreBreakdown?.lowConcernCount ?? 0} Low
+                      </span>
                     </div>
                   </div>
 
@@ -731,7 +794,7 @@ export default function Dashboard() {
                               <div
                                 key={i}
                                 className={`rounded-xl bg-zinc-950/40 border border-white/5 transition-all overflow-hidden ${getRiskBorder(
-                                  ing.riskLevel || "low"
+                                  ing.allergenConflict ? "high" : ing.riskLevel || "low"
                                 )}`}
                               >
                                 {/* Accordion Header */}
@@ -749,7 +812,12 @@ export default function Dashboard() {
                                       <span className="truncate">{ing.category}</span>
                                     </div>
                                   </div>
-                                  <div className="flex items-center gap-3">
+                                  <div className="flex items-center gap-2 sm:gap-3">
+                                    {ing.allergenConflict && (
+                                      <Badge className="bg-red-600/25 text-red-200 border border-red-500/50 text-[10px] tracking-wider uppercase font-bold">
+                                        Allergen
+                                      </Badge>
+                                    )}
                                     <Badge
                                       className={`${getRiskColor(
                                         ing.riskLevel || "low"
