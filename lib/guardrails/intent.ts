@@ -1,7 +1,5 @@
-export const OUT_OF_DOMAIN_REFIT_MESSAGE =
+export const OUT_OF_DOMAIN_REFUSAL =
   'I specialize exclusively in human health, nutrition, dietary habits, food ingredients, and medications. I cannot assist with programming, mathematics, or general non-health topics.';
-
-export const OUT_OF_DOMAIN_REFUSAL = OUT_OF_DOMAIN_REFIT_MESSAGE;
 
 export interface HealthDomainValidationResult {
   isPermitted: boolean;
@@ -16,12 +14,12 @@ const HEALTH_KEYWORDS: RegExp[] = [
   /\b(medicine|medicines|medication|medications|drug|drugs|pill|pills|pharmacy|dose|dosage|side effect|side effects|statin|statins|antibiotic|antibiotics|vaccine|vaccines)\b/i,
   /\b(ibuprofen|amoxicillin|acetaminophen|paracetamol|aspirin|omeprazole|metformin|adderall|xanax|advil|tylenol|antihistamine|antihistamines|painkiller|painkillers|insulin)\b/i,
   /\b(\w*cillin|\w*statin|\w*olol|\w*pril|\w*sartan|\w*zepam|\w*zolam|\w*prazole|\w*mycin|\w*dipine)\b/i,
-  /\b(disease|diseases|diabetes|hypertension|blood pressure|cholesterol|kidney|liver|heart|cardiac|pregnancy|pregnant|headache|fever|infection|symptom|symptoms)\b/i,
-  /\b(glycemic|sodium|sugar|sugars|potassium|calcium|iron|zinc|gut|digestion|bloating|metabolism|workout|exercise|fitness)\b/i,
+  /\b(disease|diseases|diabetes|hypertension|blood pressure|cholesterol|kidney|liver|heart|cardiac|pregnancy|pregnant|headache|fever|infection|symptom|symptoms|pain|treat|treatment|remedy|remedies|cure|bite|rash|wound|injury)\b/i,
+  /\b(glycemic|sodium|sugar|sugars|potassium|calcium|iron|zinc|gut|stomach|digestion|bloating|metabolism|workout|exercise|fitness)\b/i,
 ];
 
 const NON_HEALTH_INDICATORS: RegExp[] = [
-  /\b(code|coding|python|javascript|typescript|function|script|sql|html|css|bug|bugs|git|repo|repository|compiler|algorithm)\b/i,
+  /\b(code|coding|python|javascript|typescript|function|script|sql|html|css|software bug|code bug|debug|git|repo|repository|compiler|algorithm)\b/i,
   /\b(math|maths|equation|equations|derivative|integral|multiply|divide|calculate \d+)\b/i,
   /\b(capital of|who won|world cup|football|soccer|basketball|baseball|movie|movies|song|songs|lyrics|president|politics|election)\b/i,
   /\b(write a poem|write an essay|write a story|write python|write code)\b/i,

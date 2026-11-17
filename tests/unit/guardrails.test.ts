@@ -28,6 +28,14 @@ describe('Health Guru Guardrails', () => {
     expect(q1.responseMessage).toBe(OUT_OF_DOMAIN_REFUSAL);
   });
 
+  it('permits medical bug references like stomach bugs and bug bites', () => {
+    const q1 = validateHealthDomain('I have a stomach bug');
+    const q2 = validateHealthDomain('How do I treat a bug bite?');
+
+    expect(q1.isPermitted).toBe(true);
+    expect(q2.isPermitted).toBe(true);
+  });
+
   it('handles empty and whitespace prompts safely', () => {
     const q1 = validateHealthDomain('');
     const q2 = validateHealthDomain('   ');
