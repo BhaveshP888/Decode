@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, ChangeEvent, DragEvent } from "react";
+import Link from "next/link";
 import { motion, AnimatePresence } from "motion/react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
@@ -14,6 +15,10 @@ import {
   type HouseholdProfileMember,
 } from "@/components/household-status-bar";
 import {
+  GuruChatDrawer,
+  type GuruProductContext,
+} from "@/components/guru-chat-drawer";
+import {
   Scan,
   Warning,
   ShieldCheck,
@@ -26,6 +31,9 @@ import {
   X,
   MagnifyingGlass,
   Info,
+  Sparkle,
+  ChatCircleDots,
+  SlidersHorizontal,
 } from "@phosphor-icons/react";
 
 interface ScanIngredient {
@@ -130,6 +138,44 @@ export default function Dashboard() {
   const [householdMembers, setHouseholdMembers] = useState<HouseholdProfileMember[]>(
     DEFAULT_HOUSEHOLD_MEMBERS
   );
+
+  // Health Guru Drawer State
+  const [isGuruOpen, setIsGuruOpen] = useState(false);
+  const [guruContext, setGuruContext] = useState<GuruProductContext | null>(null);
+  const [guruInitialPrompt, setGuruInitialPrompt] = useState("");
+
+  const handleOpenGuruGeneral = () => {
+    setGuruContext(null);
+    setGuruInitialPrompt("");
+    setIsGuruOpen(true);
+  };
+
+  const handleAskGuruAboutProduct = () => {
+    if (!result) {
+      handleOpenGuruGeneral();
+      return;
+    }
+
+    const resolvedName =
+      productName.trim() || barcodeProduct?.productName || "this scanned product";
+
+    setGuruContext({
+      productName: resolvedName,
+      purityScore: result.overallScore,
+      summary: result.summary,
+      ingredients: result.ingredients.map((ing) => ({
+        name: ing.name,
+        normalisedName: ing.normalisedName,
+        riskLevel: ing.riskLevel,
+        allergenConflict: ing.allergenConflict,
+      })),
+      allergenAlert: result.allergenAlert,
+    });
+    setGuruInitialPrompt(
+      `Analyze ${resolvedName} against my health profile. Are there any high-risk additives, allergen risks, or cleaner swaps I should consider?`
+    );
+    setIsGuruOpen(true);
+  };
 
   useEffect(() => {
     const controller = new AbortController();
@@ -339,13 +385,38 @@ export default function Dashboard() {
 
       <div className="max-w-6xl mx-auto p-4 sm:p-6 md:p-12 space-y-10">
         {/* Header */}
-        <header className="space-y-3">
+        <header className="space-y-4">
           <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight text-white max-w-2xl leading-none">
             Know what you <span className="text-emerald-400">consume.</span>
           </h1>
           <p className="text-zinc-400 text-base md:text-lg max-w-xl leading-relaxed">
             Scan ingredients via photo, barcode, or text to expose hidden additives, artificial compounds, and health risks.
           </p>
+
+          <div className="flex flex-wrap items-center gap-2 pt-1">
+            <button
+              type="button"
+              onClick={handleOpenGuruGeneral}
+              className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 px-3.5 py-1.5 text-xs font-semibold text-emerald-300 transition-colors cursor-pointer"
+            >
+              <Sparkle size={14} weight="fill" aria-hidden="true" />
+              <span>Ask Health Guru</span>
+            </button>
+            <Link
+              href="/guru"
+              className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-zinc-900/60 hover:bg-zinc-900 px-3.5 py-1.5 text-xs font-medium text-zinc-300 hover:text-white transition-colors"
+            >
+              <ChatCircleDots size={14} aria-hidden="true" />
+              <span>Health Guru Console</span>
+            </Link>
+            <Link
+              href="/profile"
+              className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-zinc-900/60 hover:bg-zinc-900 px-3.5 py-1.5 text-xs font-medium text-zinc-300 hover:text-white transition-colors"
+            >
+              <SlidersHorizontal size={14} aria-hidden="true" />
+              <span>Health Profile &amp; Allergens</span>
+            </Link>
+          </div>
         </header>
 
         <div className="space-y-8">
@@ -757,19 +828,30 @@ export default function Dashboard() {
                       <p className="text-zinc-300 text-sm leading-relaxed">{result.summary}</p>
                     </div>
 
-                    <div className="flex flex-wrap gap-4 border-t border-white/5 pt-3">
-                      <span className="flex items-center gap-1.5 text-xs font-medium text-zinc-400">
-                        <span className="w-2.5 h-2.5 rounded-full bg-red-500/80 border border-red-500/20 shadow-[0_0_8px_rgba(239,68,68,0.4)]" />
-                        {result.scoreBreakdown?.highConcernCount ?? 0} High
-                      </span>
-                      <span className="flex items-center gap-1.5 text-xs font-medium text-zinc-400">
-                        <span className="w-2.5 h-2.5 rounded-full bg-amber-500/80 border border-amber-500/20 shadow-[0_0_8px_rgba(245,158,11,0.4)]" />
-                        {result.scoreBreakdown?.moderateConcernCount ?? 0} Moderate
-                      </span>
-                      <span className="flex items-center gap-1.5 text-xs font-medium text-zinc-400">
-                        <span className="w-2.5 h-2.5 rounded-full bg-emerald-500/80 border border-emerald-500/20 shadow-[0_0_8px_rgba(16,185,129,0.4)]" />
-                        {result.scoreBreakdown?.lowConcernCount ?? 0} Low
-                      </span>
+                    <div className="flex flex-wrap items-center justify-between gap-4 border-t border-white/5 pt-3">
+                      <div className="flex flex-wrap gap-4">
+                        <span className="flex items-center gap-1.5 text-xs font-medium text-zinc-400">
+                          <span className="w-2.5 h-2.5 rounded-full bg-red-500/80 border border-red-500/20 shadow-[0_0_8px_rgba(239,68,68,0.4)]" />
+                          {result.scoreBreakdown?.highConcernCount ?? 0} High
+                        </span>
+                        <span className="flex items-center gap-1.5 text-xs font-medium text-zinc-400">
+                          <span className="w-2.5 h-2.5 rounded-full bg-amber-500/80 border border-amber-500/20 shadow-[0_0_8px_rgba(245,158,11,0.4)]" />
+                          {result.scoreBreakdown?.moderateConcernCount ?? 0} Moderate
+                        </span>
+                        <span className="flex items-center gap-1.5 text-xs font-medium text-zinc-400">
+                          <span className="w-2.5 h-2.5 rounded-full bg-emerald-500/80 border border-emerald-500/20 shadow-[0_0_8px_rgba(16,185,129,0.4)]" />
+                          {result.scoreBreakdown?.lowConcernCount ?? 0} Low
+                        </span>
+                      </div>
+
+                      <Button
+                        type="button"
+                        onClick={handleAskGuruAboutProduct}
+                        className="rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold px-4 h-9 gap-2 shadow-[0_0_18px_-4px_rgba(16,185,129,0.45)] cursor-pointer"
+                      >
+                        <Sparkle size={15} weight="fill" aria-hidden="true" />
+                        <span>Ask Health Guru About This Product</span>
+                      </Button>
                     </div>
                   </div>
 
@@ -1008,6 +1090,25 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
+
+      {/* Floating Health Guru Trigger Button */}
+      <button
+        type="button"
+        onClick={result ? handleAskGuruAboutProduct : handleOpenGuruGeneral}
+        aria-label="Open Health Guru chat drawer"
+        className="fixed bottom-6 right-6 z-40 inline-flex items-center gap-2 rounded-full border border-emerald-400/40 bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-3 text-xs sm:text-sm font-semibold shadow-[0_10px_30px_-6px_rgba(16,185,129,0.55)] transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer"
+      >
+        <Sparkle size={18} weight="fill" aria-hidden="true" />
+        <span className="hidden sm:inline">Health Guru</span>
+      </button>
+
+      {/* Slide-Over Health Guru Drawer */}
+      <GuruChatDrawer
+        isOpen={isGuruOpen}
+        onClose={() => setIsGuruOpen(false)}
+        productContext={guruContext}
+        initialPrompt={guruInitialPrompt}
+      />
     </div>
   );
 }

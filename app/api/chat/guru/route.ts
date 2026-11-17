@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { isStepCount, streamText, tool } from 'ai';
+import {
+  createUIMessageStream,
+  createUIMessageStreamResponse,
+  isStepCount,
+  streamText,
+  tool,
+} from 'ai';
 import { z } from 'zod';
 import { chatModel } from '@/lib/ai';
 import { prisma } from '@/lib/db';
@@ -14,9 +20,52 @@ CRITICAL RULES:
 2. For all pharmaceutical or food-drug interaction inquiries, explain the biochemical mechanism clearly and ALWAYS conclude with: "Consult your prescribing physician or pharmacist before modifying any medication schedule."
 3. Reject non-health queries. Keep responses concise, objective, and evidence-grounded.`;
 
+export interface InputChatMessagePart {
+  type: string;
+  text?: string;
+}
+
 export interface InputChatMessage {
   role: string;
-  content: string;
+  content?: string;
+  parts?: InputChatMessagePart[];
+}
+
+const ProductContextSchema = z.object({
+  productName: z.string().optional(),
+  purityScore: z.number().optional(),
+  summary: z.string().optional(),
+  ingredients: z
+    .array(
+      z.object({
+        name: z.string(),
+        normalisedName: z.string().optional(),
+        riskLevel: z.enum(['low', 'moderate', 'high']).optional(),
+        allergenConflict: z.boolean().optional(),
+      })
+    )
+    .optional(),
+  allergenAlert: z
+    .object({
+      hasConflict: z.boolean(),
+      conflictingAllergens: z.array(z.string()),
+    })
+    .optional(),
+});
+
+export function extractMessageText(message: InputChatMessage | undefined): string {
+  if (!message) return '';
+  if (typeof message.content === 'string') return message.content;
+  if (Array.isArray(message.parts)) {
+    return message.parts
+      .filter(
+        (part): part is { type: 'text'; text: string } =>
+          part.type === 'text' && typeof part.text === 'string'
+      )
+      .map((part) => part.text)
+      .join('');
+  }
+  return '';
 }
 
 export function buildSanitizedMessages(
@@ -27,7 +76,7 @@ export function buildSanitizedMessages(
     { role: 'system', content: systemInstruction },
     ...messages.slice(-6).map((m) => ({
       role: (m.role === 'user' || m.role === 'assistant' ? m.role : 'user') as 'user' | 'assistant',
-      content: m.content,
+      content: extractMessageText(m),
     })),
   ];
 }
@@ -36,6 +85,22 @@ export function createOutOfDomainResponse(refusalText: string = OUT_OF_DOMAIN_RE
   return new Response(`0:${JSON.stringify(refusalText + '\n')}\n`, {
     headers: { 'Content-Type': 'text/plain; charset=utf-8' },
   });
+}
+
+export function createOutOfDomainUIMessageResponse(
+  refusalText: string = OUT_OF_DOMAIN_REFUSAL
+): Response {
+  const partId = 'out-of-domain-refusal';
+  const stream = createUIMessageStream({
+    execute: ({ writer }) => {
+      writer.write({ type: 'start' });
+      writer.write({ type: 'text-start', id: partId });
+      writer.write({ type: 'text-delta', id: partId, delta: refusalText });
+      writer.write({ type: 'text-end', id: partId });
+      writer.write({ type: 'finish' });
+    },
+  });
+  return createUIMessageStreamResponse({ stream });
 }
 
 export function evaluateAllergenCompatibility(
@@ -105,6 +170,42 @@ export async function persistAssistantMessage(
   }
 }
 
+export async function GET() {
+  try {
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    }
+
+    const sessions = await prisma.chatSession.findMany({
+      where: { userId: user.id },
+      orderBy: { updatedAt: 'desc' },
+      take: 25,
+      include: {
+        messages: {
+          orderBy: { createdAt: 'asc' },
+          select: {
+            id: true,
+            role: true,
+            content: true,
+            createdAt: true,
+          },
+        },
+      },
+    });
+
+    return NextResponse.json({ sessions });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    console.error('Failed to load Health Guru sessions:', message);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  }
+}
+
 export async function POST(req: NextRequest) {
   try {
     const supabase = await createClient();
@@ -116,19 +217,57 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
     }
 
-    const { messages = [], sessionId } = await req.json();
-    const rawMessages: InputChatMessage[] = Array.isArray(messages) ? messages : [];
-    const lastUserMessage =
-      [...rawMessages].reverse().find((m) => m.role === 'user')?.content || '';
+    const body = (await req.json()) as {
+      messages?: unknown;
+      sessionId?: unknown;
+      productContext?: unknown;
+    };
+    const rawMessages: InputChatMessage[] = Array.isArray(body.messages)
+      ? (body.messages as InputChatMessage[])
+      : [];
+    const sessionId = typeof body.sessionId === 'string' ? body.sessionId : undefined;
+    const lastUserMessage = extractMessageText(
+      [...rawMessages].reverse().find((m) => m.role === 'user')
+    );
 
     // Tier 1: Fast Intent Gatekeeper
     const domainCheck = validateHealthDomain(lastUserMessage);
     if (!domainCheck.isPermitted) {
-      // Return formatted as Vercel AI SDK text stream chunk so useChat handles it seamlessly
-      return createOutOfDomainResponse(domainCheck.responseMessage || OUT_OF_DOMAIN_REFUSAL);
+      return createOutOfDomainUIMessageResponse(
+        domainCheck.responseMessage || OUT_OF_DOMAIN_REFUSAL
+      );
     }
 
-    const sanitizedMessages = buildSanitizedMessages(rawMessages, GURU_SYSTEM_INSTRUCTION);
+    let systemInstruction = GURU_SYSTEM_INSTRUCTION;
+    const parsedContext = ProductContextSchema.safeParse(body.productContext);
+    if (parsedContext.success) {
+      const ctx = parsedContext.data;
+      const contextLines: string[] = [];
+      if (ctx.productName) contextLines.push(`Product: ${ctx.productName}`);
+      if (typeof ctx.purityScore === 'number') {
+        contextLines.push(`Biochemical Purity Score: ${ctx.purityScore}/10`);
+      }
+      if (ctx.allergenAlert?.hasConflict && ctx.allergenAlert.conflictingAllergens.length > 0) {
+        contextLines.push(
+          `FLAGGED USER ALLERGEN CONFLICTS: ${ctx.allergenAlert.conflictingAllergens.join(', ')}`
+        );
+      }
+      if (ctx.ingredients && ctx.ingredients.length > 0) {
+        const ingredientSummary = ctx.ingredients
+          .slice(0, 30)
+          .map((ing) => `${ing.name}${ing.riskLevel ? ` (${ing.riskLevel} risk)` : ''}`)
+          .join(', ');
+        contextLines.push(`Scanned Ingredients: ${ingredientSummary}`);
+      }
+      if (ctx.summary) {
+        contextLines.push(`Scan Summary: ${ctx.summary}`);
+      }
+      if (contextLines.length > 0) {
+        systemInstruction = `${GURU_SYSTEM_INSTRUCTION}\n\nACTIVE SCANNED PRODUCT CONTEXT:\n${contextLines.join('\n')}`;
+      }
+    }
+
+    const sanitizedMessages = buildSanitizedMessages(rawMessages, systemInstruction);
 
     const scanHistorySchema = z.object({ limitDays: z.number().default(30) });
     const toxicologySchema = z.object({ ingredientName: z.string(), query: z.string() });
