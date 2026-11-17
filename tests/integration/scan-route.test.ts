@@ -4,7 +4,7 @@ import {
   matchesAllergen,
   enrichIngredientsWithAllergensAndCitations,
   type DbIngredientWithCitation,
-} from '@/app/api/scan/route';
+} from '@/lib/scan';
 
 describe('Scan Route Allergen Matching Logic (matchesAllergen)', () => {
   it('correctly matches tree nut ingredients against tree_nuts allergen tag', () => {

@@ -15,7 +15,7 @@ import {
   buildSanitizedMessages,
   createOutOfDomainUIMessageResponse,
   extractMessageText,
-} from "@/app/api/chat/guru/route";
+} from "@/lib/guru";
 
 describe("EducationalInteractionCard", () => {
   it("renders structured pharmaceutical interaction details with prominent medical advisory disclaimer", () => {

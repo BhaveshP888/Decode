@@ -6,7 +6,7 @@ import {
   buildSanitizedMessages,
   createOutOfDomainResponse,
   evaluateAllergenCompatibility,
-} from '@/app/api/chat/guru/route';
+} from '@/lib/guru';
 import { z } from 'zod';
 
 describe('Health Guru API Integration', () => {

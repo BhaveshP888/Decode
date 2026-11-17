@@ -1,18 +1,9 @@
 import { NextResponse } from "next/server";
-import { ai } from "@/lib/ai";
+import { generateObject } from "ai";
+import { chatModel } from "@/lib/ai";
 import { prisma } from "@/lib/db";
 import { createClient } from "@/lib/supabase/server";
 import { WeeklyPlanSchema } from "@/lib/schemas";
-
-function parseLLMJSON(text: string) {
-  try {
-    const cleaned = text.replace(/```(?:json)?\n?/g, '').trim();
-    return JSON.parse(cleaned);
-  } catch (e) {
-    console.error("Failed to parse LLM JSON:", text);
-    throw e;
-  }
-}
 
 export async function GET() {
   try {
@@ -45,75 +36,25 @@ export async function GET() {
       counterNutrients: exp.ingredient.counterNutrients,
     }));
 
-    const prompt = `Based on the following ingredient exposure profile for a user over the past week, generate a counter-plan to mitigate the negative effects. 
-    Focus on adding specific foods, nutrients, and simple swaps to their diet.
-    IMPORTANT: If you see pharmaceutical ingredients or medicines, DO NOT suggest medical advice. Stick to general wellness and nutritional counters for food additives.
-    
-    Exposure Data: ${JSON.stringify(exposureData)}
-    
-    Return a valid JSON object matching this structure:
-    {
-      "weekOf": "string (e.g. Week of Oct 12)",
-      "topConcerns": ["string"],
-      "nutrientsToIncrease": [
-        { "nutrient": "string", "reason": "string", "foodSources": ["string"] }
-      ],
-      "simpleSwaps": [
-        { "avoid": "string", "replaceWith": "string" }
-      ],
-      "message": "string"
-    }`;
+    const prompt = `Based on the following ingredient exposure profile for a user over the past week, generate a counter-plan to mitigate the negative effects.
+Focus on adding specific foods, nutrients, and simple swaps to their diet.
+IMPORTANT: If you see pharmaceutical ingredients or medicines, DO NOT suggest medical advice. Stick to general wellness and nutritional counters for food additives.
 
-    const interaction = await ai.interactions.create({
-      model: "gemini-3.5-flash",
-      input: prompt,
-      response_format: {
-        type: "text",
-        mime_type: "application/json",
-        schema: {
-          type: "object",
-          properties: {
-            weekOf: { type: "string" },
-            topConcerns: {
-              type: "array",
-              items: { type: "string" }
-            },
-            nutrientsToIncrease: {
-              type: "array",
-              items: {
-                type: "object",
-                properties: {
-                  nutrient: { type: "string" },
-                  reason: { type: "string" },
-                  foodSources: {
-                    type: "array",
-                    items: { type: "string" }
-                  }
-                },
-                required: ["nutrient", "reason", "foodSources"]
-              }
-            },
-            simpleSwaps: {
-              type: "array",
-              items: {
-                type: "object",
-                properties: {
-                  avoid: { type: "string" },
-                  replaceWith: { type: "string" }
-                },
-                required: ["avoid", "replaceWith"]
-              }
-            },
-            message: { type: "string" }
-          },
-          required: ["weekOf", "topConcerns", "nutrientsToIncrease", "simpleSwaps", "message"]
-        }
-      }
+Exposure Data: ${JSON.stringify(exposureData)}
+
+Provide:
+- weekOf: label for the current week (e.g. "Week of Oct 12")
+- topConcerns: key recurring additive or ingredient concerns
+- nutrientsToIncrease: list of nutrients with reasons and foodSources
+- simpleSwaps: list of avoid / replaceWith practical swaps
+- message: concise encouraging weekly summary`;
+
+    const { object: rawData } = await generateObject({
+      model: chatModel,
+      schema: WeeklyPlanSchema,
+      prompt,
     });
 
-    const lastStep = interaction.steps.at(-1) as { content?: Array<{ text?: string }> } | undefined;
-    const content = lastStep?.content?.[0]?.text;
-    const rawData = content ? parseLLMJSON(content) : null;
     const validation = WeeklyPlanSchema.safeParse(rawData);
 
     if (!validation.success) {
@@ -124,6 +65,19 @@ export async function GET() {
     return NextResponse.json(validation.data);
   } catch (error: unknown) {
     console.error("Error generating weekly plan:", error);
+
+    const isQuota =
+      (error as { status?: number; statusCode?: number })?.status === 429 ||
+      (error as { status?: number; statusCode?: number })?.statusCode === 429 ||
+      (error instanceof Error && error.message.toLowerCase().includes("quota"));
+
+    if (isQuota) {
+      return NextResponse.json(
+        { error: "AI quota exceeded. Please wait a moment and try again." },
+        { status: 429 }
+      );
+    }
+
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }
 }
