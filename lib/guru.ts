@@ -6,6 +6,8 @@ import { z } from 'zod';
 import { prisma } from '@/lib/db';
 import { OUT_OF_DOMAIN_REFUSAL } from '@/lib/guardrails/intent';
 import { findCleanerSwaps, searchToxicologyVector, generateTextEmbedding } from '@/lib/db/vectors';
+import { buildUserUpsertData } from '@/lib/profile';
+import { matchesAllergen } from '@/lib/scan';
 
 export const GURU_SYSTEM_INSTRUCTION = `You are Decode's personal Health Guru, an expert nutritional, food science, and pharmaceutical wellness advisor.
 You help users understand food ingredients, dietary choices, and pharmaceutical drug information (mechanisms, common side effects, inactive pill excipients, and food-drug interactions).
@@ -105,9 +107,7 @@ export function evaluateAllergenCompatibility(
     return { hasConflict: false, matchedConflicts: [] };
   }
   const matched = ingredients.filter((ing) =>
-    userAllergens.some((allergen) =>
-      ing.toLowerCase().includes(allergen.toLowerCase())
-    )
+    userAllergens.some((allergen) => matchesAllergen(ing, allergen))
   );
   return {
     hasConflict: matched.length > 0,
@@ -141,6 +141,103 @@ export async function executePersonalCompatibility(userId: string, ingredients: 
   const profile = await prisma.userProfile.findUnique({ where: { userId } });
   const userAllergens = profile?.allergens || [];
   return evaluateAllergenCompatibility(userAllergens, ingredients);
+}
+
+export interface ChatPersistenceClient {
+  user: {
+    upsert: (args: ReturnType<typeof buildUserUpsertData>) => Promise<unknown>;
+  };
+  chatSession: {
+    findFirst: (args: {
+      where: { id: string; userId: string };
+      select: { id: true };
+    }) => Promise<{ id: string } | null>;
+    create: (args: {
+      data: { userId: string; title: string };
+      select: { id: true };
+    }) => Promise<{ id: string }>;
+    update: (args: {
+      where: { id: string };
+      data: { updatedAt: Date };
+    }) => Promise<unknown>;
+  };
+  chatMessage: {
+    create: (args: {
+      data: {
+        sessionId: string;
+        role: string;
+        content: string;
+      };
+    }) => Promise<unknown>;
+  };
+}
+
+export function buildChatSessionTitle(message: string, maxLength: number = 60): string {
+  const normalized = message.replace(/\s+/g, ' ').trim();
+  if (!normalized) {
+    return 'Health Consultation';
+  }
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+  return `${normalized.slice(0, Math.max(1, maxLength - 1)).trimEnd()}…`;
+}
+
+export async function ensureChatSessionAndSaveUserTurn(
+  userId: string,
+  userEmail: string | null | undefined,
+  existingSessionId: string | undefined,
+  userMessage: string,
+  db: ChatPersistenceClient = prisma
+): Promise<string | undefined> {
+  const trimmedMessage = userMessage.trim();
+  try {
+    await db.user.upsert(buildUserUpsertData(userId, userEmail));
+
+    let resolvedSessionId: string | undefined;
+
+    if (existingSessionId && existingSessionId.trim().length > 0) {
+      const existing = await db.chatSession.findFirst({
+        where: { id: existingSessionId.trim(), userId },
+        select: { id: true },
+      });
+      if (existing) {
+        resolvedSessionId = existing.id;
+      }
+    }
+
+    if (!resolvedSessionId) {
+      const created = await db.chatSession.create({
+        data: {
+          userId,
+          title: buildChatSessionTitle(trimmedMessage),
+        },
+        select: { id: true },
+      });
+      resolvedSessionId = created.id;
+    } else {
+      await db.chatSession.update({
+        where: { id: resolvedSessionId },
+        data: { updatedAt: new Date() },
+      });
+    }
+
+    if (trimmedMessage.length > 0) {
+      await db.chatMessage.create({
+        data: {
+          sessionId: resolvedSessionId,
+          role: 'user',
+          content: trimmedMessage,
+        },
+      });
+    }
+
+    return resolvedSessionId;
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    console.error('Failed to ensure chat session or persist user turn:', message);
+    return undefined;
+  }
 }
 
 export async function persistAssistantMessage(

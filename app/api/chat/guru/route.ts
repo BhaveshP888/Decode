@@ -14,6 +14,7 @@ import {
   ProductContextSchema,
   buildSanitizedMessages,
   createOutOfDomainUIMessageResponse,
+  ensureChatSessionAndSaveUserTurn,
   executeCleanSwapsSearch,
   executePersonalCompatibility,
   executeScanHistory,
@@ -70,7 +71,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
     }
 
-    const body = (await req.json()) as {
+    let rawBody: unknown;
+    try {
+      rawBody = await req.json();
+    } catch {
+      return NextResponse.json({ error: 'Invalid JSON request body.' }, { status: 400 });
+    }
+
+    if (!rawBody || typeof rawBody !== 'object' || Array.isArray(rawBody)) {
+      return NextResponse.json({ error: 'Invalid JSON request body.' }, { status: 400 });
+    }
+
+    const body = rawBody as {
       messages?: unknown;
       sessionId?: unknown;
       productContext?: unknown;
@@ -90,6 +102,14 @@ export async function POST(req: NextRequest) {
         domainCheck.responseMessage || OUT_OF_DOMAIN_REFUSAL
       );
     }
+
+    // Ensure ChatSession exists and persist the incoming user turn (non-fatal on DB errors)
+    const resolvedSessionId = await ensureChatSessionAndSaveUserTurn(
+      user.id,
+      user.email,
+      sessionId,
+      lastUserMessage
+    );
 
     let systemInstruction = GURU_SYSTEM_INSTRUCTION;
     const parsedContext = ProductContextSchema.safeParse(body.productContext);
@@ -179,15 +199,24 @@ export async function POST(req: NextRequest) {
       },
       onFinish: async ({ text, toolCalls }: { text: string; toolCalls?: unknown }) => {
         // Asynchronous persistence to PostgreSQL ChatMessage
-        await persistAssistantMessage(sessionId, text, toolCalls);
+        await persistAssistantMessage(resolvedSessionId, text, toolCalls);
       },
     } as Parameters<typeof streamText>[0]);
 
-    const streamResult = result as typeof result & { toDataStreamResponse?: () => Response };
+    const responseHeaders = resolvedSessionId
+      ? { 'X-Chat-Session-Id': resolvedSessionId }
+      : undefined;
+    const streamResult = result as typeof result & {
+      toDataStreamResponse?: (init?: { headers?: HeadersInit }) => Response;
+    };
     if (typeof streamResult.toDataStreamResponse === 'function') {
-      return streamResult.toDataStreamResponse();
+      return streamResult.toDataStreamResponse(
+        responseHeaders ? { headers: responseHeaders } : undefined
+      );
     }
-    return streamResult.toUIMessageStreamResponse();
+    return streamResult.toUIMessageStreamResponse(
+      responseHeaders ? { headers: responseHeaders } : undefined
+    );
   } catch (error) {
     console.error('Health Guru endpoint error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

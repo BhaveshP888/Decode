@@ -55,4 +55,46 @@ describe('Health Guru Guardrails', () => {
     expect(q2.isPermitted).toBe(true);
     expect(q3.isPermitted).toBe(true);
   });
+
+  it('permits legitimate medical and food queries containing polysemous words in <50ms', () => {
+    const legitimateQueries = [
+      'How does this additive affect liver function?',
+      'Does ibuprofen impair kidney function?',
+      'Can I divide my medication dose in half?',
+      'Is this ingredient a soy derivative?',
+      'Does bacteria multiply faster in warm milk?',
+      'Is protein an integral part of muscle recovery?',
+      'What does the FDA food code say about raw milk?',
+    ];
+
+    const start = performance.now();
+    const results = legitimateQueries.map((query) => validateHealthDomain(query));
+    const duration = performance.now() - start;
+
+    for (const res of results) {
+      expect(res.isPermitted).toBe(true);
+    }
+    expect(duration).toBeLessThan(50);
+  });
+
+  it('permits clinical readings and dosage ranges while rejecting qualified programming and math prompts', () => {
+    expect(validateHealthDomain('Is a blood pressure of 140/90 dangerous?').isPermitted).toBe(true);
+    expect(validateHealthDomain('Can I take 500-1000mg of vitamin C daily?').isPermitted).toBe(true);
+
+    const rejectedQueries = [
+      'Show me a code snippet for binary search',
+      'Write an async function to fetch user data',
+      'Explain function(x) closures in JavaScript',
+      'Compute the calculus derivative of x squared',
+      'Solve this algebra equation for x',
+      'Can you write a sorting algorithm in C++?',
+      'What is 45 * 19?',
+    ];
+
+    for (const query of rejectedQueries) {
+      const res = validateHealthDomain(query);
+      expect(res.isPermitted).toBe(false);
+      expect(res.responseMessage).toBe(OUT_OF_DOMAIN_REFUSAL);
+    }
+  });
 });

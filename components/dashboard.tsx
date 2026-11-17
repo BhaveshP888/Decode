@@ -34,7 +34,58 @@ import {
   Sparkle,
   ChatCircleDots,
   SlidersHorizontal,
+  BookOpenText,
+  ArrowSquareOut,
 } from "@phosphor-icons/react";
+
+export interface IngredientCitation {
+  regulatoryBody: string;
+  summary: string;
+  citationUrl: string;
+}
+
+export function isSafeHttpUrl(url: string): boolean {
+  const trimmed = url.trim();
+  if (!/^https?:\/\//i.test(trimmed)) {
+    return false;
+  }
+  try {
+    const parsed = new URL(trimmed);
+    return parsed.protocol === "https:" || parsed.protocol === "http:";
+  } catch {
+    return false;
+  }
+}
+
+export function IngredientCitationCard({ citation }: { citation: IngredientCitation }) {
+  const safeHref = isSafeHttpUrl(citation.citationUrl) ? citation.citationUrl.trim() : null;
+
+  return (
+    <div className="p-3 rounded-lg bg-sky-950/20 border border-sky-500/20 space-y-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="text-[10px] font-semibold text-sky-400 uppercase tracking-wider flex items-center gap-1.5">
+          <BookOpenText size={13} aria-hidden="true" />
+          <span>Regulatory Monograph</span>
+        </span>
+        <Badge className="bg-sky-500/15 text-sky-300 border border-sky-500/30 text-[10px] tracking-wider uppercase font-semibold">
+          {citation.regulatoryBody}
+        </Badge>
+      </div>
+      <p className="text-xs text-zinc-300 leading-relaxed">{citation.summary}</p>
+      {safeHref && (
+        <a
+          href={safeHref}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1.5 text-[11px] font-medium text-sky-400 hover:text-sky-300 underline underline-offset-2 transition-colors"
+        >
+          <span>View official monograph</span>
+          <ArrowSquareOut size={13} aria-hidden="true" />
+        </a>
+      )}
+    </div>
+  );
+}
 
 interface ScanIngredient {
   name: string;
@@ -55,6 +106,7 @@ interface ScanIngredient {
   };
   didYouKnow?: string;
   allergenConflict?: boolean;
+  citation?: IngredientCitation;
 }
 
 interface ScanResult {
@@ -1046,6 +1098,11 @@ export default function Dashboard() {
                                               </div>
                                             </div>
                                           )}
+
+                                        {/* Regulatory Monograph Citation */}
+                                        {ing.citation && (
+                                          <IngredientCitationCard citation={ing.citation} />
+                                        )}
 
                                         {/* Did You Know */}
                                         {ing.didYouKnow && (
