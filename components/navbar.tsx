@@ -28,23 +28,23 @@ export default function Navbar() {
   };
 
   const navLinkClass = (path: string) =>
-    `inline-flex items-center justify-center gap-1.5 h-9 rounded-full px-3 sm:px-4 text-sm font-medium transition-all duration-150 select-none ${
+    `inline-flex items-center justify-center gap-1.5 h-9 rounded-full px-3.5 sm:px-4 text-xs sm:text-sm font-medium transition-all duration-150 select-none ${
       isActive(path)
-        ? "text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 shadow-sm"
-        : "text-zinc-400 hover:text-white hover:bg-zinc-900/60"
+        ? "text-emerald-300 bg-emerald-500/10 border border-emerald-500/25 shadow-sm"
+        : "text-zinc-400 hover:text-zinc-100 hover:bg-white/[0.04]"
     }`;
 
   return (
-    <nav className="sticky top-0 z-40 flex items-center justify-between px-4 sm:px-6 md:px-12 h-16 border-b border-white/5 bg-zinc-950/80 backdrop-blur-xl">
+    <nav className="sticky top-0 z-40 flex items-center justify-between px-4 sm:px-6 md:px-12 h-16 border-b border-white/[0.07] bg-[#0b0c0e]/85 backdrop-blur-xl">
       <Link 
         href="/"
         prefetch={true}
-        className="flex items-center gap-2 cursor-pointer group select-none"
+        className="flex items-center gap-2.5 cursor-pointer group select-none"
       >
-        <div className="w-7 h-7 rounded-lg flex items-center justify-center overflow-hidden transition-transform group-hover:scale-105 active:scale-95">
+        <div className="w-7 h-7 rounded-lg flex items-center justify-center overflow-hidden transition-transform group-hover:scale-105 active:scale-95 shadow-sm">
           <Image src="/icon.png" alt="Decode Logo" width={28} height={28} className="object-cover" />
         </div>
-        <span className="font-semibold text-white tracking-tight transition-colors group-hover:text-zinc-200">
+        <span className="font-heading font-semibold text-white tracking-tight text-base transition-colors group-hover:text-zinc-200">
           Decode
         </span>
       </Link>
@@ -86,13 +86,13 @@ export default function Navbar() {
           <span className="hidden sm:inline">Plan</span>
         </Link>
 
-        <div className="w-px h-4 bg-zinc-800 mx-0.5 sm:mx-1" />
+        <div className="w-px h-4 bg-white/10 mx-1 sm:mx-1.5" />
 
         <Button
           variant="ghost"
           size="sm"
           onClick={handleSignOut}
-          className="text-zinc-500 hover:text-white hover:bg-zinc-900/60 gap-1.5 h-9 rounded-full px-3 sm:px-4"
+          className="text-zinc-400 hover:text-white hover:bg-white/[0.04] gap-1.5 h-9 rounded-full px-3 sm:px-3.5 text-xs font-medium"
         >
           <SignOut size={15} />
           <span className="hidden sm:inline">Sign out</span>
