@@ -4,7 +4,7 @@ import {
   normalizeProfileInput,
   buildUserUpsertData,
   buildProfileUpsertData,
-} from '@/app/api/profile/route';
+} from '@/lib/profile';
 
 describe('Profile Route Logic', () => {
   it('validates profile updates and normalizes lowercased allergen tags', () => {
