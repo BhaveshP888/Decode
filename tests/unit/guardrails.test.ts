@@ -97,4 +97,19 @@ describe('Health Guru Guardrails', () => {
       expect(res.responseMessage).toBe(OUT_OF_DOMAIN_REFUSAL);
     }
   });
+
+  it('permits regional OTC brand medicines, cold/flu symptoms, typos, and conversational follow-ups', () => {
+    const queries = [
+      'is sinarest good for cold remedation ?',
+      'is dolo 650 safe to take?',
+      'what about ashwagandha before bed?',
+      'how often can I take it?',
+      'is poha better than oats?',
+    ];
+
+    for (const query of queries) {
+      const res = validateHealthDomain(query);
+      expect(res.isPermitted).toBe(true);
+    }
+  });
 });
