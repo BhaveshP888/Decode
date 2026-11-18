@@ -21,6 +21,7 @@ import {
   X,
 } from "@phosphor-icons/react";
 
+import { MarkdownContent } from "@/components/markdown-content";
 import { cn } from "@/lib/utils";
 import type { EducationalInteraction } from "@/lib/schemas";
 
@@ -271,11 +272,7 @@ export function EducationalInteractionCard({
             </div>
           </>
         ) : (
-          cleanedBody && (
-            <div className="whitespace-pre-wrap text-xs sm:text-sm text-zinc-200 leading-relaxed">
-              {cleanedBody}
-            </div>
-          )
+          cleanedBody && <MarkdownContent content={cleanedBody} />
         )}
 
         {/* Mandatory Prominent Medical Advisory Disclaimer */}
@@ -347,8 +344,8 @@ export function GuruMessageList({ messages, isStreaming = false, className }: Gu
               {isPharmaAdvisory ? (
                 <EducationalInteractionCard content={text} />
               ) : text ? (
-                <div className="rounded-2xl rounded-tl-sm border border-white/10 bg-zinc-900/70 px-4 py-3 text-xs sm:text-sm text-zinc-200 leading-relaxed whitespace-pre-wrap">
-                  {text}
+                <div className="rounded-2xl rounded-tl-sm border border-white/10 bg-zinc-900/70 px-4 py-3">
+                  <MarkdownContent content={text} />
                 </div>
               ) : null}
             </div>
