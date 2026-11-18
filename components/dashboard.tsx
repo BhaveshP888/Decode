@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useRef, ChangeEvent, DragEvent } from "react";
+import { useState, useEffect, useRef, ChangeEvent, DragEvent } from "react";
+import Link from "next/link";
 import { motion, AnimatePresence } from "motion/react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
@@ -8,6 +9,15 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import Navbar from "@/components/navbar";
+import { BentoScanHeader, type AllergenAlert } from "@/components/bento-scan-header";
+import {
+  HouseholdStatusBar,
+  type HouseholdProfileMember,
+} from "@/components/household-status-bar";
+import {
+  GuruChatDrawer,
+  type GuruProductContext,
+} from "@/components/guru-chat-drawer";
 import {
   Scan,
   Warning,
@@ -21,7 +31,61 @@ import {
   X,
   MagnifyingGlass,
   Info,
+  Sparkle,
+  ChatCircleDots,
+  SlidersHorizontal,
+  BookOpenText,
+  ArrowSquareOut,
 } from "@phosphor-icons/react";
+
+export interface IngredientCitation {
+  regulatoryBody: string;
+  summary: string;
+  citationUrl: string;
+}
+
+export function isSafeHttpUrl(url: string): boolean {
+  const trimmed = url.trim();
+  if (!/^https?:\/\//i.test(trimmed)) {
+    return false;
+  }
+  try {
+    const parsed = new URL(trimmed);
+    return parsed.protocol === "https:" || parsed.protocol === "http:";
+  } catch {
+    return false;
+  }
+}
+
+export function IngredientCitationCard({ citation }: { citation: IngredientCitation }) {
+  const safeHref = isSafeHttpUrl(citation.citationUrl) ? citation.citationUrl.trim() : null;
+
+  return (
+    <div className="p-3 rounded-lg bg-sky-950/20 border border-sky-500/20 space-y-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="text-[10px] font-semibold text-sky-400 uppercase tracking-wider flex items-center gap-1.5">
+          <BookOpenText size={13} aria-hidden="true" />
+          <span>Regulatory Monograph</span>
+        </span>
+        <Badge className="bg-sky-500/15 text-sky-300 border border-sky-500/30 text-[10px] tracking-wider uppercase font-semibold">
+          {citation.regulatoryBody}
+        </Badge>
+      </div>
+      <p className="text-xs text-zinc-300 leading-relaxed">{citation.summary}</p>
+      {safeHref && (
+        <a
+          href={safeHref}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1.5 text-[11px] font-medium text-sky-400 hover:text-sky-300 underline underline-offset-2 transition-colors"
+        >
+          <span>View official monograph</span>
+          <ArrowSquareOut size={13} aria-hidden="true" />
+        </a>
+      )}
+    </div>
+  );
+}
 
 interface ScanIngredient {
   name: string;
@@ -41,6 +105,8 @@ interface ScanIngredient {
     suggestions?: string[];
   };
   didYouKnow?: string;
+  allergenConflict?: boolean;
+  citation?: IngredientCitation;
 }
 
 interface ScanResult {
@@ -54,7 +120,35 @@ interface ScanResult {
     easiestFix: string;
   };
   ingredients: ScanIngredient[];
+  allergenAlert?: AllergenAlert;
 }
+
+interface ProfileApiResponse {
+  profile: {
+    id: string;
+    allergens: string[];
+    dietaryRegimes: string[];
+    healthConditions: string[];
+    householdMembers?: Array<{
+      id: string;
+      name: string;
+      allergens: string[];
+      dietaryRegimes: string[];
+      healthConditions: string[];
+    }>;
+  } | null;
+}
+
+const DEFAULT_HOUSEHOLD_MEMBERS: HouseholdProfileMember[] = [
+  {
+    id: "self",
+    name: "Self",
+    role: "Self",
+    allergens: [],
+    dietaryRegimes: [],
+    healthConditions: [],
+  },
+];
 
 interface BarcodeProduct {
   found: boolean;
@@ -91,6 +185,87 @@ export default function Dashboard() {
   const [barcodeQuery, setBarcodeQuery] = useState("");
   const [barcodeLoading, setBarcodeLoading] = useState(false);
   const [barcodeProduct, setBarcodeProduct] = useState<BarcodeProduct | null>(null);
+
+  // Household & User Safety Profile State
+  const [householdMembers, setHouseholdMembers] = useState<HouseholdProfileMember[]>(
+    DEFAULT_HOUSEHOLD_MEMBERS
+  );
+
+  // Health Guru Drawer State
+  const [isGuruOpen, setIsGuruOpen] = useState(false);
+  const [guruContext, setGuruContext] = useState<GuruProductContext | null>(null);
+  const [guruInitialPrompt, setGuruInitialPrompt] = useState("");
+
+  const handleOpenGuruGeneral = () => {
+    setGuruContext(null);
+    setGuruInitialPrompt("");
+    setIsGuruOpen(true);
+  };
+
+  const handleAskGuruAboutProduct = () => {
+    if (!result) {
+      handleOpenGuruGeneral();
+      return;
+    }
+
+    const resolvedName =
+      productName.trim() || barcodeProduct?.productName || "this scanned product";
+
+    setGuruContext({
+      productName: resolvedName,
+      purityScore: result.overallScore,
+      summary: result.summary,
+      ingredients: result.ingredients.map((ing) => ({
+        name: ing.name,
+        normalisedName: ing.normalisedName,
+        riskLevel: ing.riskLevel,
+        allergenConflict: ing.allergenConflict,
+      })),
+      allergenAlert: result.allergenAlert,
+    });
+    setGuruInitialPrompt(
+      `Analyze ${resolvedName} against my health profile. Are there any high-risk additives, allergen risks, or cleaner swaps I should consider?`
+    );
+    setIsGuruOpen(true);
+  };
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    async function loadProfile() {
+      try {
+        const res = await fetch("/api/profile", { signal: controller.signal });
+        if (!res.ok) return;
+        const data = (await res.json()) as ProfileApiResponse;
+        if (!data.profile) return;
+
+        const mappedMembers: HouseholdProfileMember[] = [
+          {
+            id: "self",
+            name: "Self",
+            role: "Self",
+            allergens: data.profile.allergens ?? [],
+            dietaryRegimes: data.profile.dietaryRegimes ?? [],
+            healthConditions: data.profile.healthConditions ?? [],
+          },
+          ...(data.profile.householdMembers ?? []).map((member) => ({
+            id: member.id,
+            name: member.name,
+            allergens: member.allergens ?? [],
+            dietaryRegimes: member.dietaryRegimes ?? [],
+            healthConditions: member.healthConditions ?? [],
+          })),
+        ];
+
+        setHouseholdMembers(mappedMembers);
+      } catch {
+        // Non-fatal: gracefully keep default household state when unauthenticated or offline
+      }
+    }
+
+    loadProfile();
+    return () => controller.abort();
+  }, []);
 
   const handleInputChange = (val: string) => {
     setInput(val);
@@ -262,13 +437,38 @@ export default function Dashboard() {
 
       <div className="max-w-6xl mx-auto p-4 sm:p-6 md:p-12 space-y-10">
         {/* Header */}
-        <header className="space-y-3">
+        <header className="space-y-4">
           <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight text-white max-w-2xl leading-none">
             Know what you <span className="text-emerald-400">consume.</span>
           </h1>
           <p className="text-zinc-400 text-base md:text-lg max-w-xl leading-relaxed">
             Scan ingredients via photo, barcode, or text to expose hidden additives, artificial compounds, and health risks.
           </p>
+
+          <div className="flex flex-wrap items-center gap-2 pt-1">
+            <button
+              type="button"
+              onClick={handleOpenGuruGeneral}
+              className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 px-3.5 py-1.5 text-xs font-semibold text-emerald-300 transition-colors cursor-pointer"
+            >
+              <Sparkle size={14} weight="fill" aria-hidden="true" />
+              <span>Ask Health Guru</span>
+            </button>
+            <Link
+              href="/guru"
+              className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-zinc-900/60 hover:bg-zinc-900 px-3.5 py-1.5 text-xs font-medium text-zinc-300 hover:text-white transition-colors"
+            >
+              <ChatCircleDots size={14} aria-hidden="true" />
+              <span>Health Guru Console</span>
+            </Link>
+            <Link
+              href="/profile"
+              className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-zinc-900/60 hover:bg-zinc-900 px-3.5 py-1.5 text-xs font-medium text-zinc-300 hover:text-white transition-colors"
+            >
+              <SlidersHorizontal size={14} aria-hidden="true" />
+              <span>Health Profile &amp; Allergens</span>
+            </Link>
+          </div>
         </header>
 
         <div className="space-y-8">
@@ -655,45 +855,33 @@ export default function Dashboard() {
                   transition={{ duration: 0.4 }}
                   className="space-y-5"
                 >
-                  {/* Bento Score & Summary Grid */}
-                  <div className="grid grid-cols-1 md:grid-cols-12 gap-5">
-                    {/* Score Card */}
-                    <div className="md:col-span-4 rounded-2xl border border-white/5 bg-zinc-900/40 backdrop-blur-md p-6 flex flex-col items-center justify-center text-center">
-                      <span className="text-[10px] font-semibold text-zinc-500 uppercase tracking-widest">
-                        Safety Score
-                      </span>
-                      <div className="text-6xl font-bold text-white tracking-tighter mt-2 mb-3">
-                        {result.overallScore}
-                        <span className="text-xl text-zinc-600">/10</span>
-                      </div>
-                      {/* Score Gauge */}
-                      <div className="w-full h-2 bg-zinc-950 rounded-full overflow-hidden border border-white/5">
-                        <motion.div
-                          initial={{ width: 0 }}
-                          animate={{ width: `${result.overallScore * 10}%` }}
-                          transition={{ duration: 0.8, ease: "easeOut" }}
-                          className={`h-full rounded-full ${
-                            result.overallScore >= 7
-                              ? "bg-emerald-500"
-                              : result.overallScore >= 4
-                              ? "bg-amber-500"
-                              : "bg-red-500"
-                          }`}
-                        />
-                      </div>
+                  {/* Allergen Safety Precedence & Biochemical Purity Header */}
+                  <BentoScanHeader
+                    purityScore={result.overallScore}
+                    productName={productName.trim() || barcodeProduct?.productName || undefined}
+                    allergenAlert={result.allergenAlert}
+                  />
+
+                  {/* Household Compatibility Status Bar */}
+                  <HouseholdStatusBar
+                    members={householdMembers}
+                    ingredients={result.ingredients}
+                    allergenAlert={result.allergenAlert}
+                    overallScore={result.overallScore}
+                  />
+
+                  {/* Analysis Summary Card */}
+                  <div className="rounded-2xl border border-white/5 bg-zinc-900/40 backdrop-blur-md p-6 flex flex-col justify-between space-y-4">
+                    <div className="space-y-2">
+                      <h4 className="text-xs font-semibold text-zinc-400 uppercase tracking-widest flex items-center gap-1.5">
+                        <ChartLineUp size={14} className="text-emerald-400" />
+                        <span>Analysis Summary</span>
+                      </h4>
+                      <p className="text-zinc-300 text-sm leading-relaxed">{result.summary}</p>
                     </div>
 
-                    {/* Summary Card */}
-                    <div className="md:col-span-8 rounded-2xl border border-white/5 bg-zinc-900/40 backdrop-blur-md p-6 flex flex-col justify-between space-y-4">
-                      <div className="space-y-2">
-                        <h4 className="text-xs font-semibold text-zinc-400 uppercase tracking-widest flex items-center gap-1.5">
-                          <ChartLineUp size={14} className="text-emerald-400" />
-                          <span>Analysis Summary</span>
-                        </h4>
-                        <p className="text-zinc-300 text-sm leading-relaxed">{result.summary}</p>
-                      </div>
-
-                      <div className="flex gap-4 border-t border-white/5 pt-3">
+                    <div className="flex flex-wrap items-center justify-between gap-4 border-t border-white/5 pt-3">
+                      <div className="flex flex-wrap gap-4">
                         <span className="flex items-center gap-1.5 text-xs font-medium text-zinc-400">
                           <span className="w-2.5 h-2.5 rounded-full bg-red-500/80 border border-red-500/20 shadow-[0_0_8px_rgba(239,68,68,0.4)]" />
                           {result.scoreBreakdown?.highConcernCount ?? 0} High
@@ -707,6 +895,15 @@ export default function Dashboard() {
                           {result.scoreBreakdown?.lowConcernCount ?? 0} Low
                         </span>
                       </div>
+
+                      <Button
+                        type="button"
+                        onClick={handleAskGuruAboutProduct}
+                        className="rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold px-4 h-9 gap-2 shadow-[0_0_18px_-4px_rgba(16,185,129,0.45)] cursor-pointer"
+                      >
+                        <Sparkle size={15} weight="fill" aria-hidden="true" />
+                        <span>Ask Health Guru About This Product</span>
+                      </Button>
                     </div>
                   </div>
 
@@ -731,7 +928,7 @@ export default function Dashboard() {
                               <div
                                 key={i}
                                 className={`rounded-xl bg-zinc-950/40 border border-white/5 transition-all overflow-hidden ${getRiskBorder(
-                                  ing.riskLevel || "low"
+                                  ing.allergenConflict ? "high" : ing.riskLevel || "low"
                                 )}`}
                               >
                                 {/* Accordion Header */}
@@ -749,7 +946,12 @@ export default function Dashboard() {
                                       <span className="truncate">{ing.category}</span>
                                     </div>
                                   </div>
-                                  <div className="flex items-center gap-3">
+                                  <div className="flex items-center gap-2 sm:gap-3">
+                                    {ing.allergenConflict && (
+                                      <Badge className="bg-red-600/25 text-red-200 border border-red-500/50 text-[10px] tracking-wider uppercase font-bold">
+                                        Allergen
+                                      </Badge>
+                                    )}
                                     <Badge
                                       className={`${getRiskColor(
                                         ing.riskLevel || "low"
@@ -897,6 +1099,11 @@ export default function Dashboard() {
                                             </div>
                                           )}
 
+                                        {/* Regulatory Monograph Citation */}
+                                        {ing.citation && (
+                                          <IngredientCitationCard citation={ing.citation} />
+                                        )}
+
                                         {/* Did You Know */}
                                         {ing.didYouKnow && (
                                           <div className="text-xs text-zinc-400 italic bg-zinc-950 p-3 rounded-lg border-l-2 border-emerald-500 pl-3 leading-relaxed mt-2">
@@ -940,6 +1147,25 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
+
+      {/* Floating Health Guru Trigger Button */}
+      <button
+        type="button"
+        onClick={result ? handleAskGuruAboutProduct : handleOpenGuruGeneral}
+        aria-label="Open Health Guru chat drawer"
+        className="fixed bottom-6 right-6 z-40 inline-flex items-center gap-2 rounded-full border border-emerald-400/40 bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-3 text-xs sm:text-sm font-semibold shadow-[0_10px_30px_-6px_rgba(16,185,129,0.55)] transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer"
+      >
+        <Sparkle size={18} weight="fill" aria-hidden="true" />
+        <span className="hidden sm:inline">Health Guru</span>
+      </button>
+
+      {/* Slide-Over Health Guru Drawer */}
+      <GuruChatDrawer
+        isOpen={isGuruOpen}
+        onClose={() => setIsGuruOpen(false)}
+        productContext={guruContext}
+        initialPrompt={guruInitialPrompt}
+      />
     </div>
   );
 }

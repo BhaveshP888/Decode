@@ -1,5 +1,11 @@
 import { z } from "zod";
 
+export const ToxicologyCitationSchema = z.object({
+  regulatoryBody: z.string(),
+  summary: z.string(),
+  citationUrl: z.string(),
+});
+
 export const IngredientAnalysisSchema = z.object({
   name: z.string().min(1, "Ingredient name is required"),
   normalisedName: z.string().min(1, "Normalized ingredient name is required"),
@@ -22,6 +28,8 @@ export const IngredientAnalysisSchema = z.object({
     })
     .default({ needed: false, nutrients: [], suggestions: [] }),
   didYouKnow: z.string().optional().default(""),
+  allergenConflict: z.boolean().optional(),
+  citation: ToxicologyCitationSchema.optional(),
 });
 
 export const ScanResultSchema = z.object({
@@ -34,7 +42,48 @@ export const ScanResultSchema = z.object({
     biggestConcern: z.string().default("None"),
     easiestFix: z.string().default("None"),
   }),
-  ingredients: z.array(IngredientAnalysisSchema).min(1, "At least one ingredient is required"),
+  ingredients: z.array(IngredientAnalysisSchema).default([]),
+  allergenAlert: z
+    .object({
+      hasConflict: z.boolean(),
+      conflictingAllergens: z.array(z.string()),
+    })
+    .optional(),
+});
+
+export const UserProfileSchema = z.object({
+  allergens: z.array(z.string()).default([]),
+  dietaryRegimes: z.array(z.string()).default([]),
+  healthConditions: z.array(z.string()).default([]),
+});
+
+export const HouseholdMemberSchema = z.object({
+  name: z.string().min(1, "Name is required"),
+  allergens: z.array(z.string()).default([]),
+  dietaryRegimes: z.array(z.string()).default([]),
+  healthConditions: z.array(z.string()).default([]),
+});
+
+export const CleanerSwapResultSchema = z.object({
+  id: z.string(),
+  productName: z.string(),
+  category: z.string(),
+  purityScore: z.number(),
+  eliminatedAdditives: z.array(z.string()),
+  deltaScore: z.number(),
+});
+
+export const EducationalInteractionSchema = z.object({
+  drugName: z.string(),
+  foodOrSubstance: z.string(),
+  mechanism: z.string(),
+  clinicalObservation: z.string(),
+  advisoryDisclaimer: z.string(),
+});
+
+export const HealthGuruIntentSchema = z.object({
+  isPermitted: z.boolean(),
+  reason: z.string().optional(),
 });
 
 export const ProductComparisonItemSchema = z.object({
@@ -83,3 +132,16 @@ export const WeeklyPlanSchema = z.object({
   ),
   message: z.string(),
 });
+
+export type ToxicologyCitation = z.infer<typeof ToxicologyCitationSchema>;
+export type IngredientAnalysis = z.infer<typeof IngredientAnalysisSchema>;
+export type ScanResult = z.infer<typeof ScanResultSchema>;
+export type UserProfile = z.infer<typeof UserProfileSchema>;
+export type HouseholdMember = z.infer<typeof HouseholdMemberSchema>;
+export type CleanerSwapResult = z.infer<typeof CleanerSwapResultSchema>;
+export type EducationalInteraction = z.infer<typeof EducationalInteractionSchema>;
+export type HealthGuruIntent = z.infer<typeof HealthGuruIntentSchema>;
+export type ProductComparisonItem = z.infer<typeof ProductComparisonItemSchema>;
+export type ComparisonPoint = z.infer<typeof ComparisonPointSchema>;
+export type ComparisonResult = z.infer<typeof ComparisonResultSchema>;
+export type WeeklyPlan = z.infer<typeof WeeklyPlanSchema>;

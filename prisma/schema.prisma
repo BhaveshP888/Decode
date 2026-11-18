@@ -7,34 +7,86 @@ datasource db {
 }
 
 model Ingredient {
-  id                 String           @id @default(cuid())
-  name               String           @unique
+  id                 String               @id @default(cuid())
+  name               String               @unique
   aliases            String[]
   origin             String
-  category           String           // "natural", "synthetic", "petroleum-derived", etc.
+  category           String               // "natural", "synthetic", "petroleum-derived", etc.
   pros               String[]
   cons               String[]
   longTermPos        String[]
   longTermNeg        String[]
-  riskLevel          String           // "low", "moderate", "high"
+  riskLevel          String               // "low", "moderate", "high"
   counterNeeded      Boolean
   counterNutrients   String[]
   counterSuggestions String[]
   didYouKnow         String
-  hitCount           Int              @default(0)
-  verifiedAt         DateTime         @default(now())
-  createdAt          DateTime         @default(now())
+  hitCount           Int                  @default(0)
+  verifiedAt         DateTime             @default(now())
+  createdAt          DateTime             @default(now())
   scans              ScanIngredient[]
   exposures          ExposureTracking[]
+  citationId         String?
+  citation           ToxicologyMonograph? @relation(fields: [citationId], references: [id], onDelete: SetNull)
 }
 
 model User {
-  id          String             @id // Supabase Auth User ID
-  email       String             @unique
-  scans       Scan[]
-  exposures   ExposureTracking[]
-  comparisons Comparison[]
-  createdAt   DateTime           @default(now())
+  id           String             @id // Supabase Auth User ID
+  email        String             @unique
+  scans        Scan[]
+  exposures    ExposureTracking[]
+  comparisons  Comparison[]
+  profile      UserProfile?
+  chatSessions ChatSession[]
+  createdAt    DateTime           @default(now())
+}
+
+model UserProfile {
+  id               String            @id @default(cuid())
+  userId           String            @unique
+  allergens        String[]
+  dietaryRegimes   String[]
+  healthConditions String[]
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  scans            Scan[]
+  householdMembers HouseholdMember[]
+}
+
+model HouseholdMember {
+  id               String      @id @default(cuid())
+  profileId        String
+  name             String
+  allergens        String[]
+  dietaryRegimes   String[]
+  healthConditions String[]
+  createdAt        DateTime    @default(now())
+  profile          UserProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+}
+
+model ProductEmbedding {
+  id          String                     @id @default(cuid())
+  productName String
+  category    String
+  purityScore Float
+  allergens   String[]
+  embedding   Unsupported("vector(768)")
+  metadata    Json
+  createdAt   DateTime                   @default(now())
+}
+
+model ToxicologyMonograph {
+  id             String                     @id @default(cuid())
+  ingredientName String                     @unique
+  eNumber        String?
+  regulatoryBody String
+  classification String
+  summary        String
+  citationUrl    String
+  embedding      Unsupported("vector(768)")
+  ingredients    Ingredient[]
+  createdAt      DateTime                   @default(now())
 }
 
 model Comparison {
@@ -51,6 +103,7 @@ model Comparison {
 model Scan {
   id           String           @id @default(cuid())
   userId       String
+  profileId    String?
   productName  String?
   inputType    String           // "text", "product_name", "photo"
   rawInput     String
@@ -60,6 +113,7 @@ model Scan {
   reportJson   Json?
   createdAt    DateTime         @default(now())
   user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  profile      UserProfile?     @relation(fields: [profileId], references: [id], onDelete: SetNull)
 }
 
 model ScanIngredient {
@@ -71,13 +125,33 @@ model ScanIngredient {
 }
 
 model ExposureTracking {
-  id            String   @id @default(cuid())
+  id            String     @id @default(cuid())
   userId        String
   ingredientId  String
-  exposureCount Int      @default(1)
-  trend         String   // "increasing", "stable", "decreasing"
+  exposureCount Int        @default(1)
+  trend         String     // "increasing", "stable", "decreasing"
   lastSeenAt    DateTime
   products      String[]
   user          User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   ingredient    Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
+}
+
+model ChatSession {
+  id        String        @id @default(cuid())
+  userId    String
+  title     String
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages  ChatMessage[]
+}
+
+model ChatMessage {
+  id        String      @id @default(cuid())
+  sessionId String
+  role      String
+  content   String
+  toolCalls Json?
+  createdAt DateTime    @default(now())
+  session   ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 }
