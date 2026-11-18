@@ -34,6 +34,10 @@ import {
   type InputChatMessage,
 } from '@/lib/guru';
 
+export const maxDuration = 60;
+
+const PRIMARY_FIRST_CHUNK_TIMEOUT_MS = 10_000;
+
 export async function GET() {
   try {
     const supabase = await createClient();
@@ -202,14 +206,29 @@ export async function POST(req: NextRequest) {
       checkPersonalCompatibility: personalCompatibilityTool,
     };
 
-    const runGuruStream = (model: typeof chatModel, maxRetries: number) =>
+    const runGuruStream = (
+      model: typeof chatModel,
+      options: {
+        maxRetries: number;
+        thinkingLevel: 'minimal' | 'low';
+        abortSignal?: AbortSignal;
+      }
+    ) =>
       streamText({
         model,
         instructions: systemInstruction,
         messages: conversationMessages,
-        maxRetries,
+        maxRetries: options.maxRetries,
+        abortSignal: options.abortSignal,
         stopWhen: isStepCount(3),
         tools: guruTools,
+        providerOptions: {
+          google: {
+            thinkingConfig: {
+              thinkingLevel: options.thinkingLevel,
+            },
+          },
+        },
         onError: ({ error }) => {
           console.error('Health Guru stream error:', error);
         },
@@ -227,8 +246,39 @@ export async function POST(req: NextRequest) {
         let primaryError: unknown = null;
         let hasEmittedContent = false;
         let sentStart = false;
+        let primaryTimedOut = false;
 
-        const primaryResult = runGuruStream(chatModel, 1);
+        const primaryAbort = new AbortController();
+        const startupTimer = setTimeout(() => {
+          if (!hasEmittedContent) {
+            primaryTimedOut = true;
+            primaryAbort.abort();
+          }
+        }, PRIMARY_FIRST_CHUNK_TIMEOUT_MS);
+
+        const triggerFallback = () => {
+          console.warn(
+            `Primary model ${CHAT_MODEL_ID} ${primaryTimedOut ? 'timed out waiting for first token' : 'unavailable'}; falling back to ${FALLBACK_CHAT_MODEL_ID}.`
+          );
+          const fallbackResult = runGuruStream(fallbackChatModel, {
+            maxRetries: 2,
+            thinkingLevel: 'minimal',
+          });
+          writer.merge(
+            toUIMessageStream({
+              stream: fallbackResult.stream,
+              tools: guruTools,
+              sendStart: !sentStart,
+              onError: formatChatStreamError,
+            })
+          );
+        };
+
+        const primaryResult = runGuruStream(chatModel, {
+          maxRetries: 0,
+          thinkingLevel: 'low',
+          abortSignal: primaryAbort.signal,
+        });
         const primaryUIStream = toUIMessageStream({
           stream: primaryResult.stream,
           tools: guruTools,
@@ -242,25 +292,20 @@ export async function POST(req: NextRequest) {
         try {
           while (true) {
             const { value, done } = await reader.read();
-            if (done) break;
+            if (done) {
+              if (!hasEmittedContent && primaryTimedOut) {
+                triggerFallback();
+              }
+              break;
+            }
 
             if (
-              value.type === 'error' &&
+              (value.type === 'error' || value.type === 'abort') &&
               !hasEmittedContent &&
-              isRetryableModelAvailabilityError(primaryError)
+              (primaryTimedOut || isRetryableModelAvailabilityError(primaryError))
             ) {
-              console.warn(
-                `Primary model ${CHAT_MODEL_ID} temporarily unavailable; falling back to ${FALLBACK_CHAT_MODEL_ID}.`
-              );
-              const fallbackResult = runGuruStream(fallbackChatModel, 2);
-              writer.merge(
-                toUIMessageStream({
-                  stream: fallbackResult.stream,
-                  tools: guruTools,
-                  sendStart: !sentStart,
-                  onError: formatChatStreamError,
-                })
-              );
+              clearTimeout(startupTimer);
+              triggerFallback();
               return;
             }
 
@@ -272,11 +317,27 @@ export async function POST(req: NextRequest) {
               value.type === 'tool-input-available'
             ) {
               hasEmittedContent = true;
+              clearTimeout(startupTimer);
+            } else if (value.type === 'finish' && !hasEmittedContent && primaryTimedOut) {
+              clearTimeout(startupTimer);
+              triggerFallback();
+              return;
             }
 
             writer.write(value);
           }
+        } catch (readError: unknown) {
+          clearTimeout(startupTimer);
+          if (
+            !hasEmittedContent &&
+            (primaryTimedOut || isRetryableModelAvailabilityError(readError))
+          ) {
+            triggerFallback();
+            return;
+          }
+          throw readError;
         } finally {
+          clearTimeout(startupTimer);
           reader.releaseLock();
         }
       },

@@ -8,6 +8,8 @@ import { ComparisonResultSchema } from '@/lib/schemas'
 
 const MAX_DAILY_COMPARISONS = 2
 
+export const maxDuration = 60;
+
 export async function GET() {
   try {
     const supabase = await createClient()

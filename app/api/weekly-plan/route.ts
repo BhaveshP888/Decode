@@ -5,6 +5,8 @@ import { prisma } from "@/lib/db";
 import { createClient } from "@/lib/supabase/server";
 import { WeeklyPlanSchema } from "@/lib/schemas";
 
+export const maxDuration = 60;
+
 export async function GET() {
   try {
     const supabase = await createClient();

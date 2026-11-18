@@ -13,6 +13,8 @@ import {
 
 const MAX_IMAGE_BASE64_LENGTH = 7_000_000 // ~5MB binary
 
+export const maxDuration = 60;
+
 export async function POST(req: NextRequest) {
   try {
     // 1. Authenticate user upfront before invoking any model or database logic
