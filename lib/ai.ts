@@ -15,7 +15,11 @@ export const EMBEDDING_MODEL_ID = 'gemini-embedding-2' as const;
 export const EMBEDDING_DIMENSIONS = 768 as const;
 
 export function hasAiGatewayAuth(): boolean {
-  return Boolean(process.env.AI_GATEWAY_API_KEY || process.env.VERCEL_OIDC_TOKEN);
+  return Boolean(
+    process.env.AI_GATEWAY_API_KEY ||
+      process.env.VERCEL_OIDC_TOKEN ||
+      process.env.VERCEL
+  );
 }
 
 export const google = createGoogleGenerativeAI({ apiKey });
