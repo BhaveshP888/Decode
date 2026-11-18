@@ -9,12 +9,14 @@ if (!apiKey) {
 
 export const CHAT_MODEL_ID = 'gemini-3.8-flash' as const;
 export const FALLBACK_CHAT_MODEL_ID = 'gemini-3.5-flash-lite' as const;
+export const GUARDRAIL_MODEL_ID = 'gemini-3.1-flash-lite' as const;
 export const EMBEDDING_MODEL_ID = 'gemini-embedding-2' as const;
 export const EMBEDDING_DIMENSIONS = 768 as const;
 
 export const google = createGoogleGenerativeAI({ apiKey });
 export const chatModel = google(CHAT_MODEL_ID);
 export const fallbackChatModel = google(FALLBACK_CHAT_MODEL_ID);
+export const guardrailModel = google(GUARDRAIL_MODEL_ID);
 export const embeddingModel = google.embeddingModel(EMBEDDING_MODEL_ID);
 
 function extractRootError(error: unknown): unknown {

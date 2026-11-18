@@ -7,6 +7,7 @@ import {
   fallbackChatModel,
   formatChatStreamError,
   google,
+  guardrailModel,
   isRetryableModelAvailabilityError,
 } from '@/lib/ai';
 
@@ -15,9 +16,11 @@ describe('AI SDK Configuration', () => {
     expect(google).toBeDefined();
     expect(chatModel).toBeDefined();
     expect(fallbackChatModel).toBeDefined();
+    expect(guardrailModel).toBeDefined();
     expect(embeddingModel).toBeDefined();
     expect(chatModel.modelId).toBe('gemini-3.8-flash');
     expect(fallbackChatModel.modelId).toBe('gemini-3.5-flash-lite');
+    expect(guardrailModel.modelId).toBe('gemini-3.1-flash-lite');
     expect(embeddingModel.modelId).toBe('gemini-embedding-2');
     expect(EMBEDDING_DIMENSIONS).toBe(768);
   });

@@ -1,115 +1,99 @@
 import { describe, expect, it } from 'bun:test';
-import { validateHealthDomain, OUT_OF_DOMAIN_REFUSAL } from '@/lib/guardrails/intent';
+import {
+  GUARDRAIL_CLASSIFIER_INSTRUCTION,
+  OUT_OF_DOMAIN_REFUSAL,
+  buildGuardrailClassifierPrompt,
+  validateHealthDomain,
+  type HealthDomainClassifier,
+} from '@/lib/guardrails/intent';
 
-describe('Health Guru Guardrails', () => {
-  it('clears legitimate health, food, and pharmaceutical queries in <50ms', () => {
-    const start = performance.now();
-    const q1 = validateHealthDomain('Can I take ibuprofen with amoxicillin?');
-    const q2 = validateHealthDomain('Is sodium benzoate dangerous in soda?');
-    const q3 = validateHealthDomain('What foods help with glycemic spikes in diabetes?');
-    const duration = performance.now() - start;
+describe('Health Guru LLM-Only Guardrail', () => {
+  it('short-circuits empty and whitespace prompts without invoking the LLM classifier', async () => {
+    let called = false;
+    const classifier: HealthDomainClassifier = async () => {
+      called = true;
+      return { isPermitted: true };
+    };
 
-    expect(q1.isPermitted).toBe(true);
-    expect(q2.isPermitted).toBe(true);
-    expect(q3.isPermitted).toBe(true);
-    expect(duration).toBeLessThan(50);
-  });
+    const q1 = await validateHealthDomain('', { classifier });
+    const q2 = await validateHealthDomain('   ', { classifier });
 
-  it('strictly rejects non-health queries (math, programming, trivia)', () => {
-    const q1 = validateHealthDomain('Write a Python function to sort an array');
-    const q2 = validateHealthDomain('What is the capital of France?');
-    const q3 = validateHealthDomain('Calculate 24 * 12 + 100');
-    const q4 = validateHealthDomain('Who won the 2022 World Cup?');
-
-    expect(q1.isPermitted).toBe(false);
-    expect(q2.isPermitted).toBe(false);
-    expect(q3.isPermitted).toBe(false);
-    expect(q4.isPermitted).toBe(false);
-    expect(q1.responseMessage).toBe(OUT_OF_DOMAIN_REFUSAL);
-  });
-
-  it('permits medical bug references like stomach bugs and bug bites', () => {
-    const q1 = validateHealthDomain('I have a stomach bug');
-    const q2 = validateHealthDomain('How do I treat a bug bite?');
-
-    expect(q1.isPermitted).toBe(true);
-    expect(q2.isPermitted).toBe(true);
-  });
-
-  it('handles empty and whitespace prompts safely', () => {
-    const q1 = validateHealthDomain('');
-    const q2 = validateHealthDomain('   ');
-
+    expect(called).toBe(false);
     expect(q1.isPermitted).toBe(false);
     expect(q2.isPermitted).toBe(false);
     expect(q1.responseMessage).toBe(OUT_OF_DOMAIN_REFUSAL);
     expect(q2.responseMessage).toBe(OUT_OF_DOMAIN_REFUSAL);
   });
 
-  it('recognizes various medication names and drug classes', () => {
-    const q1 = validateHealthDomain('What are the side effects of atorvastatin?');
-    const q2 = validateHealthDomain('Can I take acetaminophen for a headache?');
-    const q3 = validateHealthDomain('Is aspirin safe during pregnancy?');
+  it('delegates any non-empty prompt (including regional drug brands and typos) to the LLM classifier', async () => {
+    const receivedInputs: string[] = [];
+    const classifier: HealthDomainClassifier = async (input) => {
+      receivedInputs.push(input);
+      return { isPermitted: true, reason: 'Medication for cold symptoms' };
+    };
 
-    expect(q1.isPermitted).toBe(true);
-    expect(q2.isPermitted).toBe(true);
-    expect(q3.isPermitted).toBe(true);
+    const res = await validateHealthDomain('is sinarest good for cold remedation ?', {
+      classifier,
+    });
+
+    expect(res.isPermitted).toBe(true);
+    expect(res.reason).toBe('Medication for cold symptoms');
+    expect(receivedInputs[0]).toContain('<latest_user_message>');
+    expect(receivedInputs[0]).toContain('is sinarest good for cold remedation ?');
   });
 
-  it('permits legitimate medical and food queries containing polysemous words in <50ms', () => {
-    const legitimateQueries = [
-      'How does this additive affect liver function?',
-      'Does ibuprofen impair kidney function?',
-      'Can I divide my medication dose in half?',
-      'Is this ingredient a soy derivative?',
-      'Does bacteria multiply faster in warm milk?',
-      'Is protein an integral part of muscle recovery?',
-      'What does the FDA food code say about raw milk?',
-    ];
+  it('rejects out-of-scope prompts with OUT_OF_DOMAIN_REFUSAL when LLM classifier returns isPermitted=false', async () => {
+    const classifier: HealthDomainClassifier = async () => ({
+      isPermitted: false,
+      reason: 'Programming question unrelated to health',
+    });
 
-    const start = performance.now();
-    const results = legitimateQueries.map((query) => validateHealthDomain(query));
-    const duration = performance.now() - start;
+    const res = await validateHealthDomain('Write a Python function to sort an array', {
+      classifier,
+    });
 
-    for (const res of results) {
-      expect(res.isPermitted).toBe(true);
-    }
-    expect(duration).toBeLessThan(50);
+    expect(res.isPermitted).toBe(false);
+    expect(res.reason).toBe('Programming question unrelated to health');
+    expect(res.responseMessage).toBe(OUT_OF_DOMAIN_REFUSAL);
   });
 
-  it('permits clinical readings and dosage ranges while rejecting qualified programming and math prompts', () => {
-    expect(validateHealthDomain('Is a blood pressure of 140/90 dangerous?').isPermitted).toBe(true);
-    expect(validateHealthDomain('Can I take 500-1000mg of vitamin C daily?').isPermitted).toBe(true);
+  it('includes recent conversation context when formatting follow-up prompts for classification', async () => {
+    let capturedInput = '';
+    const classifier: HealthDomainClassifier = async (input) => {
+      capturedInput = input;
+      return { isPermitted: true, reason: 'Follow-up on cold medication dosage' };
+    };
 
-    const rejectedQueries = [
-      'Show me a code snippet for binary search',
-      'Write an async function to fetch user data',
-      'Explain function(x) closures in JavaScript',
-      'Compute the calculus derivative of x squared',
-      'Solve this algebra equation for x',
-      'Can you write a sorting algorithm in C++?',
-      'What is 45 * 19?',
-    ];
+    const res = await validateHealthDomain('what about for a 10 year old?', {
+      recentContext: 'user: is sinarest good for cold?\nassistant: Sinarest contains paracetamol, phenylephrine, and chlorpheniramine.',
+      classifier,
+    });
 
-    for (const query of rejectedQueries) {
-      const res = validateHealthDomain(query);
-      expect(res.isPermitted).toBe(false);
-      expect(res.responseMessage).toBe(OUT_OF_DOMAIN_REFUSAL);
-    }
+    expect(res.isPermitted).toBe(true);
+    expect(capturedInput).toContain('<recent_conversation>');
+    expect(capturedInput).toContain('is sinarest good for cold?');
+    expect(capturedInput).toContain('<latest_user_message>\nwhat about for a 10 year old?\n</latest_user_message>');
   });
 
-  it('permits regional OTC brand medicines, cold/flu symptoms, typos, and conversational follow-ups', () => {
-    const queries = [
-      'is sinarest good for cold remedation ?',
-      'is dolo 650 safe to take?',
-      'what about ashwagandha before bed?',
-      'how often can I take it?',
-      'is poha better than oats?',
-    ];
+  it('fails closed with a safe retry message when the LLM classifier throws', async () => {
+    const failingClassifier: HealthDomainClassifier = async () => {
+      throw new Error('503 UNAVAILABLE');
+    };
 
-    for (const query of queries) {
-      const res = validateHealthDomain(query);
-      expect(res.isPermitted).toBe(true);
-    }
+    const res = await validateHealthDomain('is poha good for diabetes?', {
+      classifier: failingClassifier,
+    });
+
+    expect(res.isPermitted).toBe(false);
+    expect(res.reason).toBe('Domain verification failed');
+    expect(res.responseMessage).toContain('try again');
+  });
+
+  it('prompt instructions explicitly cover global/regional medicines, typos, follow-ups, and non-health refusals', () => {
+    expect(GUARDRAIL_CLASSIFIER_INSTRUCTION).toContain('Sinarest');
+    expect(GUARDRAIL_CLASSIFIER_INSTRUCTION).toContain('spelling mistakes');
+    expect(GUARDRAIL_CLASSIFIER_INSTRUCTION).toContain('Programming');
+    expect(GUARDRAIL_CLASSIFIER_INSTRUCTION).toContain('Mathematics');
+    expect(buildGuardrailClassifierPrompt('hello')).toBe('<latest_user_message>\nhello\n</latest_user_message>');
   });
 });

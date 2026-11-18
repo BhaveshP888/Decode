@@ -109,8 +109,20 @@ export async function POST(req: NextRequest) {
       [...rawMessages].reverse().find((m) => m.role === 'user')
     );
 
-    // Tier 1: Fast Intent Gatekeeper
-    const domainCheck = validateHealthDomain(lastUserMessage);
+    const lastUserIndex = rawMessages.map((m) => m.role).lastIndexOf('user');
+    const priorMessages = lastUserIndex > 0 ? rawMessages.slice(Math.max(0, lastUserIndex - 4), lastUserIndex) : [];
+    const recentContext = priorMessages
+      .map((m) => {
+        const text = extractMessageText(m).trim();
+        return text ? `${m.role}: ${text.slice(0, 240)}` : '';
+      })
+      .filter(Boolean)
+      .join('\n');
+
+    // LLM-Only Domain Gatekeeper: verify health/food/medicine scope before running tools or streaming
+    const domainCheck = await validateHealthDomain(lastUserMessage, {
+      recentContext: recentContext || undefined,
+    });
     if (!domainCheck.isPermitted) {
       return createOutOfDomainUIMessageResponse(
         domainCheck.responseMessage || OUT_OF_DOMAIN_REFUSAL

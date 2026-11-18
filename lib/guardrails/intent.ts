@@ -1,75 +1,124 @@
+import { generateText, Output } from 'ai';
+import { fallbackChatModel, guardrailModel } from '@/lib/ai';
+import { HealthGuruIntentSchema, type HealthGuruIntent } from '@/lib/schemas';
+
 export const OUT_OF_DOMAIN_REFUSAL =
   'I specialize exclusively in human health, nutrition, dietary habits, food ingredients, and medications. I cannot assist with programming, mathematics, or general non-health topics.';
 
 export interface HealthDomainValidationResult {
   isPermitted: boolean;
-  tier?: 'fast_allow' | 'fast_reject' | 'tier2_verify';
   reason?: string;
   responseMessage?: string;
 }
 
-const HEALTH_KEYWORDS: RegExp[] = [
-  /\b(health|nutrition|diet|dietary|calorie|calories|protein|fat|fats|carb|carbs|carbohydrate|carbohydrates|vitamin|vitamins|mineral|minerals|supplement|supplements|weight|obesity|immunity|immune)\b/i,
-  /\b(food|foods|eat|eating|drink|drinking|beverage|beverages|snack|snacks|cereal|dairy|milk|soy|meat|vegan|vegetarian|gluten|allergy|allergic|allergen|allergens|meal|recipe|soda|juice|water)\b/i,
-  /\b(ingredient|ingredients|additive|additives|preservative|preservatives|sweetener|sweeteners|colorant|colorants|emulsifier|emulsifiers|toxic|toxicity|toxicology|efsa|fda)\b/i,
-  /\b(medicine|medicines|medication|medications|drug|drugs|pill|pills|tablet|tablets|capsule|capsules|syrup|ointment|pharmacy|dose|dosage|side effect|side effects|statin|statins|antibiotic|antibiotics|vaccine|vaccines)\b/i,
-  /\b(ibuprofen|amoxicillin|acetaminophen|paracetamol|aspirin|omeprazole|metformin|adderall|xanax|advil|tylenol|antihistamine|antihistamines|painkiller|painkillers|insulin)\b/i,
-  /\b(\w*cillin|\w*statin|\w*olol|\w*pril|\w*sartan|\w*zepam|\w*zolam|\w*prazole|\w*mycin|\w*dipine)\b/i,
-  /\b(disease|diseases|diabetes|hypertension|blood pressure|cholesterol|kidney|liver|heart|cardiac|pregnancy|pregnant|headache|migraine|fever|cold|cough|flu|sinus|congestion|throat|infection|bacteria|bacterial|symptom|symptoms|pain|treat|treatment|remedy|remedies|cure|bite|rash|wound|injury|asthma|thyroid|acidity|nausea|insomnia|sleep|fatigue|acne|skin|hair)\b/i,
-  /\b(glycemic|sodium|sugar|sugars|potassium|calcium|iron|zinc|gut|stomach|digestion|bloating|metabolism|muscle|workout|exercise|fitness)\b/i,
-];
+export type HealthDomainClassifier = (
+  input: string
+) => Promise<HealthGuruIntent>;
 
-const NON_HEALTH_INDICATORS: RegExp[] = [
-  /\b(source code|code snippet|write code|coding|programming|python|javascript|typescript|async function|def \w+|script|sql|html|css|software bug|code bug|debug|git|repo|repository|compiler|algorithm|sorting algorithm)\b/i,
-  /\bfunction\s*\(|(?<![a-z0-9_])c\+\+(?![a-z0-9_])/i,
-  /\b(math|maths|calculus|algebra|equation|equations|math derivative|first derivative|second derivative|definite integral|indefinite integral|calculate\s+\d+)\b/i,
-  /\b\d+\s*\*\s*\d+\b|\b\d+\s+\+\s+\d+\b|\b(divided by|multiplied by)\s+\d+\b/i,
-  /\b(capital of|who won|world cup|football|soccer|basketball|baseball|movie|movies|song|songs|lyrics|president|politics|election)\b/i,
-  /\b(write a poem|write an essay|write a story|write python|write code)\b/i,
-];
+export interface ValidateHealthDomainOptions {
+  recentContext?: string;
+  classifier?: HealthDomainClassifier;
+}
 
-const CHEMICAL_HEURISTICS = /\b(e\d{3}[a-z]?|acid|benzoate|sorbate|sulfate|oxide|chloride)\b/i;
+export const GUARDRAIL_CLASSIFIER_INSTRUCTION = `You are a strict semantic domain classifier for Decode Health Guru, an assistant dedicated exclusively to human health, medicine, food, and nutrition.
 
-export function validateHealthDomain(prompt: string): HealthDomainValidationResult {
+Decide whether the user's latest message is IN-SCOPE (isPermitted = true) or OUT-OF-SCOPE (isPermitted = false):
+
+IN-SCOPE (isPermitted = true):
+- Any question about human health, physical or mental wellness, medical symptoms, conditions, diseases, allergies, sleep, fitness, or prevention.
+- Any medication, pharmaceutical, OTC remedy, regional/international drug brand name (e.g. Sinarest, Dolo, Crocin, Tylenol, Pan-D, Advil), dosage safety, side effects, excipients, or food-drug / drug-drug interactions.
+- Any food, beverage, regional dish, culinary ingredient, nutrition question, diet, supplement, vitamin, herb, food additive, preservative, or food safety/storage question.
+- Any genuine follow-up question referencing a health/food/medicine topic already in the recent conversation context.
+- Be tolerant of spelling mistakes, slang, brand names, and non-English or transliterated food/medicine names.
+
+OUT-OF-SCOPE (isPermitted = false):
+- Programming, software engineering, debugging, algorithms, or code generation.
+- Mathematics, calculations, homework, physics, or non-biological sciences.
+- General trivia, geography, history, politics, sports, movies, music, creative writing, jokes, or standalone casual greetings/chit-chat with no health/food/medicine question.
+
+Return JSON matching the schema with isPermitted (boolean) and a concise <=12-word reason.`;
+
+export function buildGuardrailClassifierPrompt(
+  prompt: string,
+  recentContext?: string
+): string {
+  const trimmedContext = recentContext?.trim();
+  if (trimmedContext) {
+    return `<recent_conversation>\n${trimmedContext}\n</recent_conversation>\n\n<latest_user_message>\n${prompt}\n</latest_user_message>`;
+  }
+  return `<latest_user_message>\n${prompt}\n</latest_user_message>`;
+}
+
+async function defaultLlmClassifier(input: string): Promise<HealthGuruIntent> {
+  const runWithModel = async (model: typeof guardrailModel) => {
+    const { output } = await generateText({
+      model,
+      output: Output.object({ schema: HealthGuruIntentSchema }),
+      instructions: GUARDRAIL_CLASSIFIER_INSTRUCTION,
+      prompt: input,
+      maxOutputTokens: 80,
+      maxRetries: 1,
+      abortSignal: AbortSignal.timeout(8_000),
+      providerOptions: {
+        google: {
+          thinkingConfig: {
+            thinkingLevel: 'minimal',
+          },
+        },
+      },
+    });
+    return output;
+  };
+
+  try {
+    return await runWithModel(guardrailModel);
+  } catch (primaryError: unknown) {
+    console.warn(
+      'Primary guardrail classifier failed; retrying with fallback model:',
+      primaryError instanceof Error ? primaryError.message : String(primaryError)
+    );
+    return await runWithModel(fallbackChatModel);
+  }
+}
+
+export async function validateHealthDomain(
+  prompt: string,
+  options: ValidateHealthDomainOptions = {}
+): Promise<HealthDomainValidationResult> {
   const trimmed = prompt.trim();
   if (!trimmed) {
     return {
       isPermitted: false,
-      tier: 'fast_reject',
       reason: 'Empty prompt',
       responseMessage: OUT_OF_DOMAIN_REFUSAL,
     };
   }
 
-  // Tier 1 Fast Reject: Block clearly non-health prompts (programming, math, trivia, creative writing) in <1ms
-  for (const pattern of NON_HEALTH_INDICATORS) {
-    if (pattern.test(trimmed)) {
+  const classify = options.classifier ?? defaultLlmClassifier;
+  const classifierInput = buildGuardrailClassifierPrompt(trimmed, options.recentContext);
+
+  try {
+    const decision = await classify(classifierInput);
+    if (decision.isPermitted) {
       return {
-        isPermitted: false,
-        tier: 'fast_reject',
-        reason: 'Non-health domain detected',
-        responseMessage: OUT_OF_DOMAIN_REFUSAL,
+        isPermitted: true,
+        reason: decision.reason,
       };
     }
-  }
 
-  // Tier 1 Fast Allow: Recognized health, nutrition, symptom, medication, or chemical terminology
-  for (const pattern of HEALTH_KEYWORDS) {
-    if (pattern.test(trimmed)) {
-      return { isPermitted: true, tier: 'fast_allow' };
-    }
+    return {
+      isPermitted: false,
+      reason: decision.reason ?? 'Out of health, food, and medicine scope',
+      responseMessage: OUT_OF_DOMAIN_REFUSAL,
+    };
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Unknown classifier error';
+    console.error('LLM health domain guardrail failed (failing closed):', message);
+    return {
+      isPermitted: false,
+      reason: 'Domain verification failed',
+      responseMessage:
+        'Unable to verify your question right now due to temporary AI service load. Please try again in a moment.',
+    };
   }
-
-  if (CHEMICAL_HEURISTICS.test(trimmed)) {
-    return { isPermitted: true, tier: 'fast_allow' };
-  }
-
-  // Delegate ambiguous terms (e.g. regional drug brands like Sinarest/Dolo, local foods, typos,
-  // or conversational follow-ups) to Tier 2 (LLM with pinned domain system instruction)
-  // rather than falsely blocking legitimate health queries with a static keyword list.
-  return {
-    isPermitted: true,
-    tier: 'tier2_verify',
-    reason: 'Delegated to Tier 2 domain enforcement',
-  };
 }

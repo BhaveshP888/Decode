@@ -34,9 +34,15 @@ describe('Health Guru API Integration', () => {
     expect(sanitized[6].content).toBe('Resp 4');
   });
 
-  it('rejects out-of-domain prompt correctly', () => {
-    const check = validateHealthDomain('Can you write a sorting algorithm in C++?');
+  it('rejects out-of-domain prompt correctly', async () => {
+    const check = await validateHealthDomain('Can you write a sorting algorithm in C++?', {
+      classifier: async () => ({
+        isPermitted: false,
+        reason: 'Programming query outside health domain',
+      }),
+    });
     expect(check.isPermitted).toBe(false);
+    expect(check.responseMessage).toBe(OUT_OF_DOMAIN_REFUSAL);
   });
 
   it('buildSanitizedMessages correctly pins system prompt and handles variable turn counts', () => {
