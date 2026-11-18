@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'bun:test';
 import {
+  DECISION_PERMIT_THRESHOLD,
   GUARDRAIL_CLASSIFIER_INSTRUCTION,
   OUT_OF_DOMAIN_REFUSAL,
   buildGuardrailClassifierPrompt,
+  evaluateDecisionProbability,
   validateHealthDomain,
   type HealthDomainClassifier,
 } from '@/lib/guardrails/intent';
@@ -87,6 +89,16 @@ describe('Health Guru LLM-Only Guardrail', () => {
     expect(res.isPermitted).toBe(false);
     expect(res.reason).toBe('Domain verification failed');
     expect(res.responseMessage).toContain('try again');
+  });
+
+  it('evaluates calibrated Mammoth-1 decision probabilities against DECISION_PERMIT_THRESHOLD', () => {
+    expect(DECISION_PERMIT_THRESHOLD).toBe(0.45);
+    expect(evaluateDecisionProbability(0.92).isPermitted).toBe(true);
+    expect(evaluateDecisionProbability(0.45).isPermitted).toBe(true);
+    expect(evaluateDecisionProbability(0.44).isPermitted).toBe(false);
+    expect(evaluateDecisionProbability(0.05).isPermitted).toBe(false);
+    expect(evaluateDecisionProbability(Number.NaN).isPermitted).toBe(false);
+    expect(evaluateDecisionProbability(0.92).reason).toContain('baseten/mammoth-1');
   });
 
   it('prompt instructions explicitly cover global/regional medicines, typos, follow-ups, and non-health refusals', () => {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { APICallError, RetryError } from 'ai';
 import {
+  DECISION_GUARDRAIL_MODEL_ID,
   EMBEDDING_DIMENSIONS,
   chatModel,
   embeddingModel,
@@ -12,7 +13,7 @@ import {
 } from '@/lib/ai';
 
 describe('AI SDK Configuration', () => {
-  it('exports configured Vercel AI SDK instances using current Gemini models', () => {
+  it('exports configured Vercel AI SDK instances using current Gemini and decision models', () => {
     expect(google).toBeDefined();
     expect(chatModel).toBeDefined();
     expect(fallbackChatModel).toBeDefined();
@@ -21,6 +22,7 @@ describe('AI SDK Configuration', () => {
     expect(chatModel.modelId).toBe('gemini-3.8-flash');
     expect(fallbackChatModel.modelId).toBe('gemini-3.5-flash-lite');
     expect(guardrailModel.modelId).toBe('gemini-3.1-flash-lite');
+    expect(DECISION_GUARDRAIL_MODEL_ID).toBe('baseten/mammoth-1');
     expect(embeddingModel.modelId).toBe('gemini-embedding-2');
     expect(EMBEDDING_DIMENSIONS).toBe(768);
   });

@@ -1,9 +1,16 @@
-import { generateText, Output } from 'ai';
-import { fallbackChatModel, guardrailModel } from '@/lib/ai';
+import { experimental_decide as decide, generateText, Output } from 'ai';
+import {
+  DECISION_GUARDRAIL_MODEL_ID,
+  fallbackChatModel,
+  guardrailModel,
+  hasAiGatewayAuth,
+} from '@/lib/ai';
 import { HealthGuruIntentSchema, type HealthGuruIntent } from '@/lib/schemas';
 
 export const OUT_OF_DOMAIN_REFUSAL =
   'I specialize exclusively in human health, nutrition, dietary habits, food ingredients, and medications. I cannot assist with programming, mathematics, or general non-health topics.';
+
+export const DECISION_PERMIT_THRESHOLD = 0.45;
 
 export interface HealthDomainValidationResult {
   isPermitted: boolean;
@@ -49,35 +56,85 @@ export function buildGuardrailClassifierPrompt(
   return `<latest_user_message>\n${prompt}\n</latest_user_message>`;
 }
 
-async function defaultLlmClassifier(input: string): Promise<HealthGuruIntent> {
-  const runWithModel = async (model: typeof guardrailModel) => {
-    const { output } = await generateText({
-      model,
-      output: Output.object({ schema: HealthGuruIntentSchema }),
-      instructions: GUARDRAIL_CLASSIFIER_INSTRUCTION,
-      prompt: input,
-      maxOutputTokens: 80,
-      maxRetries: 1,
-      abortSignal: AbortSignal.timeout(8_000),
-      providerOptions: {
-        google: {
-          thinkingConfig: {
-            thinkingLevel: 'minimal',
-          },
+export function evaluateDecisionProbability(
+  probability: number,
+  threshold: number = DECISION_PERMIT_THRESHOLD
+): HealthGuruIntent {
+  const clamped = Math.max(0, Math.min(1, Number.isFinite(probability) ? probability : 0));
+  const isPermitted = clamped >= threshold;
+  return {
+    isPermitted,
+    reason: `Decision model (${DECISION_GUARDRAIL_MODEL_ID}) p=${clamped.toFixed(2)}`,
+  };
+}
+
+async function classifyWithDecisionModel(input: string): Promise<HealthGuruIntent> {
+  const result = await decide({
+    model: DECISION_GUARDRAIL_MODEL_ID,
+    state: input,
+    maxRetries: 1,
+    abortSignal: AbortSignal.timeout(5_000),
+    questions: {
+      inHealthScope: {
+        type: 'boolean',
+        instructions:
+          'Is the latest user message (considering any recent conversation context) a genuine question or follow-up about human health, wellness, medical symptoms, conditions, allergies, food, diets, nutrition, supplements, ingredients/additives, or any medication/drug (including global or regional brand names, OTC remedies, and typos)?',
+        criteria: {
+          true: 'The message asks about human health, symptoms, conditions, allergies, fitness, sleep, food, regional dishes, nutrition, supplements, ingredients, or any medicine/drug brand (including regional brands like Sinarest, Dolo, Crocin, Pan-D, or follow-ups to a prior health question).',
+          false: 'The message asks about programming, code, mathematics, trivia, geography, history, sports, politics, entertainment, creative writing, or standalone casual greetings with no health, food, or medicine question.',
         },
       },
-    });
-    return output;
-  };
+    },
+  });
 
+  return evaluateDecisionProbability(result.answers.inHealthScope.probability);
+}
+
+async function classifyWithGeminiModel(
+  model: typeof guardrailModel,
+  input: string
+): Promise<HealthGuruIntent> {
+  const { output } = await generateText({
+    model,
+    output: Output.object({ schema: HealthGuruIntentSchema }),
+    instructions: GUARDRAIL_CLASSIFIER_INSTRUCTION,
+    prompt: input,
+    maxOutputTokens: 80,
+    maxRetries: 1,
+    abortSignal: AbortSignal.timeout(8_000),
+    providerOptions: {
+      google: {
+        thinkingConfig: {
+          thinkingLevel: 'minimal',
+        },
+      },
+    },
+  });
+  return output;
+}
+
+async function defaultLlmClassifier(input: string): Promise<HealthGuruIntent> {
+  // Primary: Baseten Mammoth-1 decision model via Vercel AI Gateway (auto-authenticated on Vercel via VERCEL_OIDC_TOKEN or AI_GATEWAY_API_KEY)
+  if (hasAiGatewayAuth()) {
+    try {
+      return await classifyWithDecisionModel(input);
+    } catch (decisionError: unknown) {
+      console.warn(
+        `Decision model ${DECISION_GUARDRAIL_MODEL_ID} failed; falling back to Gemini classifier:`,
+        decisionError instanceof Error ? decisionError.message : String(decisionError)
+      );
+    }
+  }
+
+  // Fallback 1 -> 2: Gemini Flash-Lite structured classifiers
   try {
-    return await runWithModel(guardrailModel);
+    return await classifyWithGeminiModel(guardrailModel, input);
   } catch (primaryError: unknown) {
     console.warn(
-      'Primary guardrail classifier failed; retrying with fallback model:',
+      'Primary Gemini guardrail classifier failed; retrying with fallback model:',
       primaryError instanceof Error ? primaryError.message : String(primaryError)
     );
-    return await runWithModel(fallbackChatModel);
+    return await classifyWithGeminiModel(fallbackChatModel, input);
   }
 }
 
@@ -113,7 +170,7 @@ export async function validateHealthDomain(
     };
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Unknown classifier error';
-    console.error('LLM health domain guardrail failed (failing closed):', message);
+    console.error('Health domain guardrail failed (failing closed):', message);
     return {
       isPermitted: false,
       reason: 'Domain verification failed',
