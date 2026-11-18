@@ -1,11 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
+  createUIMessageStream,
+  createUIMessageStreamResponse,
   isStepCount,
   streamText,
   tool,
+  toUIMessageStream,
 } from 'ai';
 import { z } from 'zod';
-import { chatModel } from '@/lib/ai';
+import {
+  CHAT_MODEL_ID,
+  FALLBACK_CHAT_MODEL_ID,
+  chatModel,
+  fallbackChatModel,
+  formatChatStreamError,
+  isRetryableModelAvailabilityError,
+} from '@/lib/ai';
 import { prisma } from '@/lib/db';
 import { createClient } from '@/lib/supabase/server';
 import { validateHealthDomain, OUT_OF_DOMAIN_REFUSAL } from '@/lib/guardrails/intent';
@@ -185,32 +195,100 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    const result = streamText({
-      model: chatModel,
-      instructions: systemInstruction,
-      messages: conversationMessages,
-      stopWhen: isStepCount(3),
-      tools: {
-        getUserScanHistory: scanHistoryTool,
-        searchIngredientToxicology: searchToxicologyTool,
-        findCleanSwaps: cleanSwapsTool,
-        checkPersonalCompatibility: personalCompatibilityTool,
-      },
-      onError: ({ error }) => {
-        console.error('Health Guru stream error:', error);
-      },
-      onFinish: async ({ text, toolCalls }) => {
-        // Asynchronous persistence to PostgreSQL ChatMessage
-        await persistAssistantMessage(resolvedSessionId, text, toolCalls);
+    const guruTools = {
+      getUserScanHistory: scanHistoryTool,
+      searchIngredientToxicology: searchToxicologyTool,
+      findCleanSwaps: cleanSwapsTool,
+      checkPersonalCompatibility: personalCompatibilityTool,
+    };
+
+    const runGuruStream = (model: typeof chatModel, maxRetries: number) =>
+      streamText({
+        model,
+        instructions: systemInstruction,
+        messages: conversationMessages,
+        maxRetries,
+        stopWhen: isStepCount(3),
+        tools: guruTools,
+        onError: ({ error }) => {
+          console.error('Health Guru stream error:', error);
+        },
+        onFinish: async ({ text, toolCalls }) => {
+          // Asynchronous persistence to PostgreSQL ChatMessage
+          if (text.trim().length > 0) {
+            await persistAssistantMessage(resolvedSessionId, text, toolCalls);
+          }
+        },
+      });
+
+    const stream = createUIMessageStream({
+      onError: formatChatStreamError,
+      execute: async ({ writer }) => {
+        let primaryError: unknown = null;
+        let hasEmittedContent = false;
+        let sentStart = false;
+
+        const primaryResult = runGuruStream(chatModel, 1);
+        const primaryUIStream = toUIMessageStream({
+          stream: primaryResult.stream,
+          tools: guruTools,
+          onError: (err) => {
+            primaryError = err;
+            return formatChatStreamError(err);
+          },
+        });
+
+        const reader = primaryUIStream.getReader();
+        try {
+          while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+
+            if (
+              value.type === 'error' &&
+              !hasEmittedContent &&
+              isRetryableModelAvailabilityError(primaryError)
+            ) {
+              console.warn(
+                `Primary model ${CHAT_MODEL_ID} temporarily unavailable; falling back to ${FALLBACK_CHAT_MODEL_ID}.`
+              );
+              const fallbackResult = runGuruStream(fallbackChatModel, 2);
+              writer.merge(
+                toUIMessageStream({
+                  stream: fallbackResult.stream,
+                  tools: guruTools,
+                  sendStart: !sentStart,
+                  onError: formatChatStreamError,
+                })
+              );
+              return;
+            }
+
+            if (value.type === 'start') {
+              sentStart = true;
+            } else if (
+              value.type === 'text-delta' ||
+              value.type === 'tool-input-start' ||
+              value.type === 'tool-input-available'
+            ) {
+              hasEmittedContent = true;
+            }
+
+            writer.write(value);
+          }
+        } finally {
+          reader.releaseLock();
+        }
       },
     });
 
     const responseHeaders = resolvedSessionId
       ? { 'X-Chat-Session-Id': resolvedSessionId }
       : undefined;
-    return result.toUIMessageStreamResponse(
-      responseHeaders ? { headers: responseHeaders } : undefined
-    );
+    return createUIMessageStreamResponse({
+      stream,
+      headers: responseHeaders,
+    });
   } catch (error) {
     console.error('Health Guru endpoint error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
