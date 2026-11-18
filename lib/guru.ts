@@ -64,6 +64,19 @@ export function extractMessageText(message: InputChatMessage | undefined): strin
   return '';
 }
 
+export function buildConversationMessages(
+  messages: InputChatMessage[]
+): Array<{ role: 'user' | 'assistant'; content: string }> {
+  return messages
+    .filter((m) => m.role === 'user' || m.role === 'assistant')
+    .slice(-6)
+    .map((m) => ({
+      role: (m.role === 'assistant' ? 'assistant' : 'user') as 'user' | 'assistant',
+      content: extractMessageText(m),
+    }))
+    .filter((m) => m.content.trim().length > 0);
+}
+
 export function buildSanitizedMessages(
   messages: InputChatMessage[],
   systemInstruction: string = GURU_SYSTEM_INSTRUCTION

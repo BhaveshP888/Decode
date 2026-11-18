@@ -12,7 +12,7 @@ import { validateHealthDomain, OUT_OF_DOMAIN_REFUSAL } from '@/lib/guardrails/in
 import {
   GURU_SYSTEM_INSTRUCTION,
   ProductContextSchema,
-  buildSanitizedMessages,
+  buildConversationMessages,
   createOutOfDomainUIMessageResponse,
   ensureChatSessionAndSaveUserTurn,
   executeCleanSwapsSearch,
@@ -140,7 +140,10 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const sanitizedMessages = buildSanitizedMessages(rawMessages, systemInstruction);
+    const conversationMessages = buildConversationMessages(rawMessages);
+    if (conversationMessages.length === 0) {
+      return NextResponse.json({ error: 'At least one message is required.' }, { status: 400 });
+    }
 
     const scanHistorySchema = z.object({ limitDays: z.number().default(30) });
     const toxicologySchema = z.object({ ingredientName: z.string(), query: z.string() });
@@ -154,7 +157,6 @@ export async function POST(req: NextRequest) {
         return await executeScanHistory(user.id, limitDays);
       },
     });
-    Object.assign(scanHistoryTool, { parameters: scanHistorySchema });
 
     const searchToxicologyTool = tool({
       description:
@@ -164,7 +166,6 @@ export async function POST(req: NextRequest) {
         return await executeToxicologySearch(query || ingredientName);
       },
     });
-    Object.assign(searchToxicologyTool, { parameters: toxicologySchema });
 
     const cleanSwapsTool = tool({
       description:
@@ -174,7 +175,6 @@ export async function POST(req: NextRequest) {
         return await executeCleanSwapsSearch(user.id, category);
       },
     });
-    Object.assign(cleanSwapsTool, { parameters: cleanSwapsSchema });
 
     const personalCompatibilityTool = tool({
       description:
@@ -184,37 +184,31 @@ export async function POST(req: NextRequest) {
         return await executePersonalCompatibility(user.id, ingredients);
       },
     });
-    Object.assign(personalCompatibilityTool, { parameters: compatibilitySchema });
 
     const result = streamText({
       model: chatModel,
-      messages: sanitizedMessages,
+      instructions: systemInstruction,
+      messages: conversationMessages,
       stopWhen: isStepCount(3),
-      ...({ maxSteps: 3 } as Record<string, unknown>),
       tools: {
         getUserScanHistory: scanHistoryTool,
         searchIngredientToxicology: searchToxicologyTool,
         findCleanSwaps: cleanSwapsTool,
         checkPersonalCompatibility: personalCompatibilityTool,
       },
-      onFinish: async ({ text, toolCalls }: { text: string; toolCalls?: unknown }) => {
+      onError: ({ error }) => {
+        console.error('Health Guru stream error:', error);
+      },
+      onFinish: async ({ text, toolCalls }) => {
         // Asynchronous persistence to PostgreSQL ChatMessage
         await persistAssistantMessage(resolvedSessionId, text, toolCalls);
       },
-    } as Parameters<typeof streamText>[0]);
+    });
 
     const responseHeaders = resolvedSessionId
       ? { 'X-Chat-Session-Id': resolvedSessionId }
       : undefined;
-    const streamResult = result as typeof result & {
-      toDataStreamResponse?: (init?: { headers?: HeadersInit }) => Response;
-    };
-    if (typeof streamResult.toDataStreamResponse === 'function') {
-      return streamResult.toDataStreamResponse(
-        responseHeaders ? { headers: responseHeaders } : undefined
-      );
-    }
-    return streamResult.toUIMessageStreamResponse(
+    return result.toUIMessageStreamResponse(
       responseHeaders ? { headers: responseHeaders } : undefined
     );
   } catch (error) {

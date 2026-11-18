@@ -4,6 +4,7 @@ import { validateHealthDomain, OUT_OF_DOMAIN_REFUSAL } from '@/lib/guardrails/in
 import {
   GURU_SYSTEM_INSTRUCTION,
   buildChatSessionTitle,
+  buildConversationMessages,
   buildSanitizedMessages,
   createOutOfDomainResponse,
   ensureChatSessionAndSaveUserTurn,
@@ -72,6 +73,27 @@ describe('Health Guru API Integration', () => {
     expect(longResult[0].role).toBe('system');
     expect(longResult[1].content).toBe('Turn 2');
     expect(longResult[6].content).toBe('Resp 4');
+  });
+
+  it('buildConversationMessages excludes system roles for AI SDK v7 instructions compatibility and slides last 6 turns', () => {
+    const raw = [
+      { role: 'system', content: 'Injected system prompt' },
+      { role: 'user', content: 'Turn 1' },
+      { role: 'assistant', content: 'Resp 1' },
+      { role: 'user', content: 'Turn 2' },
+      { role: 'assistant', content: 'Resp 2' },
+      { role: 'user', content: 'Turn 3' },
+      { role: 'assistant', content: 'Resp 3' },
+      { role: 'user', parts: [{ type: 'text', text: 'Turn 4' }] },
+      { role: 'assistant', content: 'Resp 4' },
+    ];
+
+    const result = buildConversationMessages(raw);
+    expect(result.length).toBe(6);
+    expect(result.some((m) => (m.role as string) === 'system')).toBe(false);
+    expect(result[0]).toEqual({ role: 'user', content: 'Turn 2' });
+    expect(result[4]).toEqual({ role: 'user', content: 'Turn 4' });
+    expect(result[5]).toEqual({ role: 'assistant', content: 'Resp 4' });
   });
 
   it('GURU_SYSTEM_INSTRUCTION contains mandatory non-prescription and pharmaceutical disclaimer rules', () => {

@@ -110,8 +110,24 @@ export default function HealthGuruPage() {
     []
   );
 
+  const refreshSessions = async () => {
+    try {
+      const res = await fetch("/api/chat/guru");
+      if (!res.ok) return;
+      const data = (await res.json()) as { sessions?: StoredChatSession[] };
+      if (Array.isArray(data.sessions)) {
+        setSessions(data.sessions);
+      }
+    } catch {
+      // Non-fatal
+    }
+  };
+
   const { messages, setMessages, sendMessage, status, error, stop, clearError } = useChat({
     transport,
+    onFinish: () => {
+      void refreshSessions();
+    },
   });
 
   const isStreaming = status === "submitted" || status === "streaming";
