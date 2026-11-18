@@ -1,11 +1,12 @@
 import { prisma } from '@/lib/db';
-import { embeddingModel } from '@/lib/ai';
+import { EMBEDDING_DIMENSIONS, embeddingModel } from '@/lib/ai';
 import { embed } from 'ai';
 
 export async function generateTextEmbedding(text: string): Promise<number[]> {
   const { embedding } = await embed({
     model: embeddingModel,
     value: text.replace(/\n/g, ' ').trim(),
+    dimensions: EMBEDDING_DIMENSIONS,
   });
   return embedding;
 }

@@ -21,7 +21,7 @@
 - **Contextual Drawer & Dedicated Workspace**: Ask follow-up questions directly from a scan report via the slide-over `GuruChatDrawer` (pre-populated with active product context and allergen conflicts) or browse persistent chat sessions on `/guru`.
 - **Dynamic Multi-Step Tool Calling**: Powered by Vercel AI SDK `streamText` with `stopWhen: isStepCount(3)`, Health Guru dynamically invokes four scoped tools:
   - `getUserScanHistory`: Reviews the authenticated user's recent scans and scores.
-  - `searchIngredientToxicology`: Runs `pgvector` semantic cosine similarity search against `ToxicologyMonograph` embeddings (`text-embedding-004`, 768 dims).
+  - `searchIngredientToxicology`: Runs `pgvector` semantic cosine similarity search against `ToxicologyMonograph` embeddings (`gemini-embedding-2`, 768 dims).
   - `findCleanSwaps`: Queries `ProductEmbedding` vectors filtered relationally to `purityScore >= 8.5` while strictly excluding the user's allergens.
   - `checkPersonalCompatibility`: Cross-references candidate ingredients against the user's saved allergen profile.
 - **Educational Pharmaceutical Guidance (`EducationalInteractionCard`)**: Explains biochemical drug mechanisms, inactive pill excipients, and food-drug interactions (e.g., grapefruit CYP3A4 inhibition with statins) inside a structured educational card carrying a mandatory medical advisory disclaimer. Health Guru never prescribes, alters dosages, or diagnoses clinical diseases.
@@ -66,16 +66,16 @@
 ┌───────────────────┐ ┌──────────────────────────────────────────┐
 │  Vercel AI SDK    │ │ Supabase PostgreSQL + pgvector (Prisma 7)│
 │  (@ai-sdk/google) │ │ - User, UserProfile, HouseholdMember     │
-│  - gemini-2.5-    │ │ - Scan, Ingredient, ExposureTracking     │
+│  - gemini-3.8-    │ │ - Scan, Ingredient, ExposureTracking     │
 │    flash (chat)   │ │ - Comparison, ChatSession, ChatMessage   │
-│  - text-embedding │ │ - ProductEmbedding, ToxicologyMonograph  │
-│    -004 (vectors) │ │   (768-dim vector columns)               │
+│  - gemini-        │ │ - ProductEmbedding, ToxicologyMonograph  │
+│    embedding-2    │ │   (768-dim vector columns)               │
 └───────────────────┘ └──────────────────────────────────────────┘
 ```
 
 - **Framework**: [Next.js](https://nextjs.org/) (v16 App Router + Turbopack)
 - **UI & Styling**: [React 19](https://react.dev/), [Tailwind CSS v4](https://tailwindcss.com/), [Motion](https://motion.dev/), [Base UI](https://base-ui.com/), [Phosphor Icons](https://phosphoricons.com/)
-- **AI Orchestration**: [Vercel AI SDK](https://sdk.vercel.ai/) (`ai`, `@ai-sdk/google`, `@ai-sdk/react`) with Google `gemini-2.5-flash` and `text-embedding-004`
+- **AI Orchestration**: [Vercel AI SDK](https://sdk.vercel.ai/) (`ai`, `@ai-sdk/google`, `@ai-sdk/react`) with Google `gemini-3.8-flash` and `gemini-embedding-2` (768 dims)
 - **Database & Vector Search**: PostgreSQL with `pgvector` hosted on [Supabase](https://supabase.com/), managed via [Prisma 7 ORM](https://www.prisma.io/) with `@prisma/adapter-pg`
 - **Authentication**: Supabase Auth with Google OAuth (`@supabase/ssr`)
 - **Validation**: [Zod v4](https://zod.dev/)
